@@ -21,8 +21,9 @@ def setup_cookies():
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
                 f.write(cookies_content)
                 cookies_path = f.name
+                print("✅ Cookies loaded from environment")
         except Exception as e:
-            print(f"Error decoding cookies: {e}")
+            print(f"❌ Error decoding cookies: {e}")
     
     return cookies_path
 
@@ -57,19 +58,31 @@ def get_formats():
         if not url:
             return jsonify({'error': 'No URL provided'}), 400
 
+        print(f"🔍 Processing URL: {url}")
         cookies_path = setup_cookies()
 
+        # Enhanced yt-dlp options with better format extraction
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
+            # Force better format extraction
+            'format': 'bestvideo+bestaudio/best',
+            'ignoreerrors': True,
         }
         
         if cookies_path:
             ydl_opts['cookiefile'] = cookies_path
+            print("🔑 Using cookies for authentication")
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
+            print(f"📹 Video title: {info.get('title')}")
+            print(f"📊 Available formats: {len(info.get('formats', []))}")
+            
+            # Debug: Print all available formats
+            for i, fmt in enumerate(info.get('formats', [])):
+                print(f"Format {i}: {fmt.get('format_id')} | {fmt.get('ext')} | {fmt.get('format_note')} | {fmt.get('vcodec')} | {fmt.get('acodec')}")
             
             # Organize formats by type
             video_formats = []
@@ -85,26 +98,42 @@ def get_formats():
                     'vcodec': fmt.get('vcodec', 'none'),
                     'acodec': fmt.get('acodec', 'none'),
                     'quality': fmt.get('quality', 0),
+                    'url': fmt.get('url')  # For debugging
                 }
                 
-                # Categorize as video or audio
-                if fmt.get('vcodec') != 'none' and fmt.get('vcodec') is not None:
+                # Better format categorization
+                has_video = fmt.get('vcodec') not in [None, 'none']
+                has_audio = fmt.get('acodec') not in [None, 'none']
+                
+                if has_video:
                     video_formats.append(format_info)
-                elif fmt.get('acodec') != 'none' and fmt.get('acodec') is not None:
+                elif has_audio:
                     audio_formats.append(format_info)
+
+            # If no formats found, try alternative extraction
+            if not video_formats and not audio_formats:
+                print("⚠️ No formats found, trying alternative method...")
+                return jsonify({
+                    'error': 'No downloadable formats found',
+                    'title': info.get('title'),
+                    'duration': info.get('duration'),
+                    'debug_info': {
+                        'formats_count': len(info.get('formats', [])),
+                        'age_restricted': info.get('age_limit'),
+                        'is_live': info.get('is_live'),
+                        'requires_login': info.get('requires_login')
+                    }
+                }), 404
 
             # Sort video formats by resolution (best first)
             def get_resolution_rank(format_info):
                 res = format_info['resolution']
-                if res == '4K': return 4000
-                if res == '1440p': return 1440
-                if res == '1080p': return 1080
-                if res == '720p': return 720
-                if res == '480p': return 480
-                if res == '360p': return 360
-                if res == '240p': return 240
-                if res == '144p': return 144
-                return 0
+                resolution_rank = {
+                    '4K': 4000, '1440p': 1440, '1080p': 1080, 
+                    '720p': 720, '480p': 480, '360p': 360, 
+                    '240p': 240, '144p': 144
+                }
+                return resolution_rank.get(res, 0)
             
             video_formats.sort(key=get_resolution_rank, reverse=True)
             
@@ -116,14 +145,15 @@ def get_formats():
                 'thumbnail': info.get('thumbnail'),
                 'video_formats': video_formats,
                 'audio_formats': audio_formats,
-                'used_cookies': bool(cookies_path)
+                'used_cookies': bool(cookies_path),
+                'total_formats': len(video_formats) + len(audio_formats)
             }
             
             return jsonify(response_data)
             
     except Exception as e:
         error_msg = str(e)
-        print(f"Formats error: {error_msg}")
+        print(f"❌ Formats error: {error_msg}")
         return jsonify({'error': f'Failed to get formats: {error_msg}'}), 500
     finally:
         if cookies_path and os.path.exists(cookies_path):
@@ -145,11 +175,15 @@ def download_video():
 
         cookies_path = setup_cookies()
 
+        # Enhanced download options
         ydl_opts = {
             'format': format_id,
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            }
         }
         
         if cookies_path:
@@ -189,8 +223,65 @@ def download_video():
             
     except Exception as e:
         error_msg = str(e)
-        print(f"Download error: {error_msg}")
+        print(f"❌ Download error: {error_msg}")
         return jsonify({'error': f'Download failed: {error_msg}'}), 500
+    finally:
+        if cookies_path and os.path.exists(cookies_path):
+            try:
+                os.unlink(cookies_path)
+            except:
+                pass
+
+@app.route('/debug_url', methods=['POST'])
+def debug_url():
+    """Debug endpoint to see what's happening with a URL"""
+    cookies_path = None
+    try:
+        url = request.json.get('url')
+        if not url:
+            return jsonify({'error': 'No URL provided'}), 400
+
+        cookies_path = setup_cookies()
+
+        ydl_opts = {
+            'quiet': False,  # Show warnings for debugging
+            'no_warnings': False,
+            'extract_flat': False,
+            'listformats': True,
+        }
+        
+        if cookies_path:
+            ydl_opts['cookiefile'] = cookies_path
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            debug_info = {
+                'title': info.get('title'),
+                'duration': info.get('duration'),
+                'formats_count': len(info.get('formats', [])),
+                'age_restricted': info.get('age_limit'),
+                'is_live': info.get('is_live'),
+                'requires_login': info.get('requires_login'),
+                'availability': info.get('availability'),
+                'formats_preview': []
+            }
+            
+            # Show first 5 formats for preview
+            for fmt in info.get('formats', [])[:5]:
+                debug_info['formats_preview'].append({
+                    'format_id': fmt.get('format_id'),
+                    'ext': fmt.get('ext'),
+                    'resolution': fmt.get('format_note'),
+                    'vcodec': fmt.get('vcodec'),
+                    'acodec': fmt.get('acodec'),
+                    'url_present': bool(fmt.get('url'))
+                })
+            
+            return jsonify(debug_info)
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
     finally:
         if cookies_path and os.path.exists(cookies_path):
             try:
