@@ -50,7 +50,7 @@ def cleanup_old_files():
         pass
 
 def download_video_background(download_id, url, format_type, cookies_path):
-    """Background download task with full error logging"""
+    """Background download task"""
     try:
         download_status[download_id] = {'status': 'downloading', 'progress': 0}
         
@@ -62,17 +62,17 @@ def download_video_background(download_id, url, format_type, cookies_path):
             cmd = [
                 "yt-dlp", "-x", "--audio-format", "mp3",
                 "--audio-quality", "0", "-o", output_file,
-                "--no-warnings", "--no-playlist", "--no-check-certificates"
+                "--no-warnings", "--no-playlist"
             ]
         else:
             output_file = f"/tmp/{base}.mp4"
-            # Relaxed format with multiple fallbacks
+            # SIMPLEST FORMAT - just get best video up to 720p
             cmd = [
                 "yt-dlp",
-                "-f", "(bv*[vcodec^=avc]+ba)/(bv*+ba)/b[height<=720]/b",
-                "--merge-output-format", "mp4",
+                "-f", "best[height<=720]/best",  # Simple fallback
+                "--recode-video", "mp4",  # Force convert to MP4
                 "-o", output_file,
-                "--no-warnings", "--no-playlist", "--no-check-certificates"
+                "--no-warnings", "--no-playlist"
             ]
         
         if cookies_path:
@@ -80,7 +80,7 @@ def download_video_background(download_id, url, format_type, cookies_path):
         
         cmd.append(url)
         
-        logger.info(f"📥 [{download_id}] Command: {' '.join(cmd[:5])}...")
+        logger.info(f"📥 [{download_id}] Downloading: {url[:60]}")
         
         process = subprocess.Popen(
             cmd,
@@ -92,14 +92,11 @@ def download_video_background(download_id, url, format_type, cookies_path):
         try:
             stdout, stderr = process.communicate(timeout=600)
             
-            # LOG THE OUTPUT
-            if stdout:
-                logger.info(f"📄 [{download_id}] stdout: {stdout[:500]}")
             if stderr:
-                logger.error(f"📄 [{download_id}] stderr: {stderr[:500]}")
+                logger.info(f"📄 [{download_id}] yt-dlp: {stderr[:300]}")
             
             if process.returncode == 0:
-                # Check if file exists (might have different extension)
+                # Find downloaded file
                 found_file = None
                 for ext in ['.mp4', '.webm', '.mkv', '.mp3', '.m4a']:
                     test_file = output_file.replace('.mp4' if format_type == 'mp4' else '.mp3', ext)
@@ -119,40 +116,41 @@ def download_video_background(download_id, url, format_type, cookies_path):
                         }
                         logger.error(f"❌ [{download_id}] Too large: {size_mb:.1f}MB")
                     else:
-                        logger.info(f"✅ [{download_id}] Ready: {size_mb:.2f}MB ({os.path.basename(found_file)})")
+                        logger.info(f"✅ [{download_id}] Ready: {size_mb:.2f}MB")
                         download_status[download_id] = {
                             'status': 'ready',
                             'file': found_file,
                             'size': size_mb
                         }
                 else:
-                    logger.error(f"❌ [{download_id}] File not found after download")
+                    logger.error(f"❌ [{download_id}] File not found")
                     download_status[download_id] = {
                         'status': 'error',
                         'error': 'File not found after download'
                     }
             else:
-                error_msg = stderr[:200] if stderr else 'Unknown error'
-                logger.error(f"❌ [{download_id}] Failed with code {process.returncode}: {error_msg}")
+                error_msg = stderr.split('\n')[-2] if stderr else 'Unknown error'
+                logger.error(f"❌ [{download_id}] Failed: {error_msg}")
                 download_status[download_id] = {
                     'status': 'error',
-                    'error': f'Download failed: {error_msg}'
+                    'error': f'Download failed. Video may be unavailable or restricted.'
                 }
         
         except subprocess.TimeoutExpired:
             process.kill()
-            logger.error(f"⏰ [{download_id}] Timeout after 10 minutes")
+            logger.error(f"⏰ [{download_id}] Timeout")
             download_status[download_id] = {
                 'status': 'error',
                 'error': 'Download timeout (10 minutes)'
             }
     
     except Exception as e:
-        logger.error(f"💥 [{download_id}] Exception: {str(e)}")
+        logger.error(f"💥 [{download_id}] Exception: {e}")
         download_status[download_id] = {
             'status': 'error',
-            'error': f'Server error: {str(e)}'
+            'error': str(e)
         }
+
 
 @app.route('/')
 def index():
@@ -250,3 +248,4 @@ def health():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
