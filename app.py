@@ -45,34 +45,32 @@ def download_video_background(download_id, url, format_type, cookies_path):
         download_status[download_id] = {'status': 'downloading'}
         
         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-        output_template = f"/tmp/video_{url_hash}_%(title).50s.%(ext)s"
+        timestamp = int(time.time())
+        output_template = f"/tmp/video_{url_hash}_{timestamp}.%(ext)s"
+        
+        # Base command with bot protection bypass
+        cmd = [
+            "yt-dlp",
+            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "--no-check-certificates",
+            "--extractor-retries", "3",
+            "-o", output_template
+        ]
         
         if format_type == 'mp3':
-            cmd = [
-                "yt-dlp",
-                "-x", "--audio-format", "mp3",
-                "--audio-quality", "0",
-                "-o", output_template
-            ]
-        else:
-            # EXACT LAMBDA METHOD - NO FORMAT SPECIFIED
-            cmd = [
-                "yt-dlp",
-                "-o", output_template
-            ]
+            cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
         
         if cookies_path:
             cmd.extend(["--cookies", cookies_path])
         
         cmd.append(url)
         
-        logger.info(f"📥 [{download_id}] Starting...")
+        logger.info(f"📥 [{download_id}] Downloading...")
         
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         
         if result.returncode == 0:
-            # Find downloaded file
-            files = glob.glob(f"/tmp/video_{url_hash}_*.*")
+            files = glob.glob(f"/tmp/video_{url_hash}_{timestamp}.*")
             
             if files:
                 file_path = files[0]
@@ -93,27 +91,16 @@ def download_video_background(download_id, url, format_type, cookies_path):
                         'size': size_mb
                     }
             else:
-                download_status[download_id] = {
-                    'status': 'error',
-                    'error': 'File not found'
-                }
+                download_status[download_id] = {'status': 'error', 'error': 'File not found'}
         else:
-            logger.error(f"❌ [{download_id}] Error: {result.stderr[:200]}")
-            download_status[download_id] = {
-                'status': 'error',
-                'error': 'Download failed'
-            }
+            error = result.stderr[:200] if result.stderr else 'Unknown error'
+            logger.error(f"❌ [{download_id}] {error}")
+            download_status[download_id] = {'status': 'error', 'error': 'Download failed'}
     
     except subprocess.TimeoutExpired:
-        download_status[download_id] = {
-            'status': 'error',
-            'error': 'Timeout (10 min)'
-        }
+        download_status[download_id] = {'status': 'error', 'error': 'Timeout (10 min)'}
     except Exception as e:
-        download_status[download_id] = {
-            'status': 'error',
-            'error': str(e)
-        }
+        download_status[download_id] = {'status': 'error', 'error': str(e)}
 
 @app.route('/')
 def index():
