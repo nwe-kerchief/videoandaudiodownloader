@@ -32,14 +32,8 @@
         }
         
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         
         h1 {
@@ -112,8 +106,6 @@
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s;
-            position: relative;
-            overflow: hidden;
         }
         
         button:hover:not(:disabled) {
@@ -138,18 +130,6 @@
             text-align: center;
             font-weight: 500;
             display: none;
-            animation: slideDown 0.3s ease-out;
-        }
-        
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
         }
         
         #status.show {
@@ -166,12 +146,6 @@
             background: #efe;
             color: #2d7a2d;
             border: 2px solid #cfc;
-        }
-        
-        .processing {
-            background: #fef9e7;
-            color: #f39c12;
-            border: 2px solid #fdeaa8;
         }
         
         .spinner {
@@ -211,10 +185,6 @@
             line-height: 1.8;
         }
         
-        .info li {
-            margin-bottom: 6px;
-        }
-        
         .footer {
             text-align: center;
             margin-top: 20px;
@@ -225,13 +195,8 @@
         }
         
         @media (max-width: 600px) {
-            .container {
-                padding: 25px;
-            }
-            
-            h1 {
-                font-size: 24px;
-            }
+            .container { padding: 25px; }
+            h1 { font-size: 24px; }
         }
     </style>
 </head>
@@ -254,14 +219,12 @@
             <div class="form-group">
                 <label for="format">📂 Format</label>
                 <select id="format">
-                    <option value="mp4">🎬 MP4 Video (720p max)</option>
-                    <option value="mp3">🎵 MP3 Audio (Best Quality)</option>
+                    <option value="mp4">🎬 MP4 Video (720p - Windows compatible)</option>
+                    <option value="mp3">🎵 MP3 Audio (320kbps)</option>
                 </select>
             </div>
             
-            <button type="submit" id="submitBtn">
-                Download
-            </button>
+            <button type="submit" id="submitBtn">Download</button>
         </form>
         
         <div class="spinner" id="spinner"></div>
@@ -270,17 +233,15 @@
         <div class="info">
             <h3>ℹ️ Information</h3>
             <ul>
-                <li><strong>Supported platforms:</strong> YouTube, TikTok</li>
-                <li><strong>Maximum file size:</strong> 200MB</li>
-                <li><strong>Video quality:</strong> Up to 720p</li>
-                <li><strong>Audio quality:</strong> Best available (320kbps)</li>
-                <li><strong>Processing time:</strong> Usually 10-60 seconds</li>
+                <li><strong>Platforms:</strong> YouTube, TikTok</li>
+                <li><strong>Max size:</strong> 200MB</li>
+                <li><strong>Video quality:</strong> 720p (H.264)</li>
+                <li><strong>Audio quality:</strong> 320kbps MP3</li>
+                <li><strong>Windows compatible:</strong> Auto-convert HEVC to H.264</li>
             </ul>
         </div>
         
-        <div class="footer">
-            Made with ❤️ using yt-dlp
-        </div>
+        <div class="footer">Made with ❤️ using yt-dlp & ffmpeg</div>
     </div>
     
     <script>
@@ -302,7 +263,6 @@
                 return;
             }
             
-            // Disable form
             submitBtn.disabled = true;
             submitBtn.textContent = 'Processing...';
             spinner.style.display = 'block';
@@ -311,9 +271,7 @@
             try {
                 const response = await fetch('/api/download', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ url, format })
                 });
                 
@@ -322,18 +280,14 @@
                     throw new Error(error.error || 'Download failed');
                 }
                 
-                // Get filename from Content-Disposition header
                 const contentDisposition = response.headers.get('Content-Disposition');
                 let filename = `download.${format}`;
                 
                 if (contentDisposition) {
-                    const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
-                    if (filenameMatch) {
-                        filename = filenameMatch[1];
-                    }
+                    const match = contentDisposition.match(/filename="?(.+?)"?$/);
+                    if (match) filename = match[1];
                 }
                 
-                // Download file
                 const blob = await response.blob();
                 const downloadUrl = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -345,12 +299,10 @@
                 window.URL.revokeObjectURL(downloadUrl);
                 
                 showStatus('✅ Download started! Check your downloads folder.', 'success');
-                
-                // Clear form
                 urlInput.value = '';
                 
             } catch (error) {
-                console.error('Download error:', error);
+                console.error('Error:', error);
                 showStatus('❌ ' + error.message, 'error');
             } finally {
                 submitBtn.disabled = false;
