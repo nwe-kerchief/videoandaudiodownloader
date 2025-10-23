@@ -383,6 +383,92 @@
         let currentJobId = null;
         let checkInterval = null;
 
+        function downloadSelectedFormat() {
+            if (!selectedFormatId || !currentVideoInfo) {
+                showError('Please select a format first');
+                return;
+            }
+            
+            const downloadBtn = document.getElementById('downloadBtn');
+            const loading = document.getElementById('loading');
+            const loadingText = document.getElementById('loadingText');
+            
+            loadingText.textContent = 'Starting download...';
+            loading.style.display = 'block';
+            downloadBtn.disabled = true;
+            downloadBtn.textContent = 'Starting download...';
+            
+            // First try the normal download method
+            fetch('/start_download', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    url: document.getElementById('videoUrl').value,
+                    format_id: selectedFormatId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    // If normal method fails, try direct download
+                    loadingText.textContent = 'Trying alternative method...';
+                    return tryDirectDownload();
+                } else {
+                    currentJobId = data.job_id;
+                    downloadBtn.style.display = 'none';
+                    loading.style.display = 'none';
+                    startCheckingProgress();
+                }
+            })
+            .catch(err => {
+                loadingText.textContent = 'Trying alternative method...';
+                tryDirectDownload();
+            });
+        }
+        
+        function tryDirectDownload() {
+            fetch('/direct_download', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    url: document.getElementById('videoUrl').value
+                })
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.blob().then(blob => {
+                        // Create download link
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = currentVideoInfo.title + '.mp4';
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        showSuccess('Download completed using alternative method!');
+                        resetDownload();
+                    });
+                } else {
+                    return response.json().then(data => {
+                        throw new Error(data.error || 'Alternative download failed');
+                    });
+                }
+            })
+            .catch(err => {
+                loading.style.display = 'none';
+                const downloadBtn = document.getElementById('downloadBtn');
+                downloadBtn.disabled = false;
+                downloadBtn.textContent = '📥 Download Selected Format';
+                showError('All download methods failed: ' + err.message);
+            });
+        }
+
         function getFormats() {
             const url = document.getElementById('videoUrl').value;
             const getFormatsBtn = document.getElementById('getFormatsBtn');
@@ -768,3 +854,4 @@
     </script>
 </body>
 </html>
+
