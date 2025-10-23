@@ -336,6 +336,53 @@
         let selectedFormatId = null;
         let selectedFormatText = '';
 
+        function showFormats(data) {
+            currentVideoInfo = data;
+            
+            // Show video info
+            document.getElementById('videoTitle').textContent = data.title;
+            document.getElementById('videoMeta').textContent = 
+                `Duration: ${data.duration_readable} • Formats available: ${data.total_formats || 0}`;
+            document.getElementById('videoInfo').style.display = 'block';
+            
+            if (data.total_formats === 0) {
+                showError('No downloadable formats found. This video might be age-restricted, region-locked, or require login.');
+                return;
+            }
+            
+            // Show video formats
+            const videoFormatsContainer = document.getElementById('videoFormats');
+            videoFormatsContainer.innerHTML = '';
+            
+            if (data.video_formats && data.video_formats.length > 0) {
+                data.video_formats.forEach(format => {
+                    const formatCard = createFormatCard(format, 'video');
+                    videoFormatsContainer.appendChild(formatCard);
+                });
+            } else {
+                videoFormatsContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No video formats available</div>';
+            }
+            
+            // Show audio formats
+            const audioFormatsContainer = document.getElementById('audioFormats');
+            audioFormatsContainer.innerHTML = '';
+            
+            if (data.audio_formats && data.audio_formats.length > 0) {
+                data.audio_formats.forEach(format => {
+                    const formatCard = createFormatCard(format, 'audio');
+                    audioFormatsContainer.appendChild(formatCard);
+                });
+            } else {
+                audioFormatsContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No audio formats available</div>';
+            }
+            
+            // Show formats section
+            document.getElementById('formatsSection').style.display = 'block';
+            
+            // Update step indicator
+            updateStepIndicator(2);
+        }
+
         function getFormats() {
             const url = document.getElementById('videoUrl').value;
             const getFormatsBtn = document.getElementById('getFormatsBtn');
