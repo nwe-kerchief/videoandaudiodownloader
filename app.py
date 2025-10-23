@@ -1,17 +1,23 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_file
 import yt_dlp
 import re
 import os
 import tempfile
 import base64
+import threading
+import time
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+
+# Store download jobs
+download_jobs = {}
+JOB_TIMEOUT = 300  # 5 minutes
 
 def clean_filename(filename):
     return re.sub(r'[^\w\s-]', '', filename).strip()
 
 def setup_cookies():
-    """Setup cookies from environment variable"""
     cookies_path = None
     cookies_b64 = os.environ.get('YT_COOKIES_B64')
     
@@ -28,7 +34,6 @@ def setup_cookies():
     return cookies_path
 
 def format_size(bytes_size):
-    """Convert bytes to human readable format"""
     if not bytes_size:
         return "Unknown"
     for unit in ['B', 'KB', 'MB', 'GB']:
@@ -38,12 +43,53 @@ def format_size(bytes_size):
     return f"{bytes_size:.1f} TB"
 
 def format_duration(seconds):
-    """Convert seconds to MM:SS"""
     if not seconds:
         return "Unknown"
     minutes = seconds // 60
     seconds = seconds % 60
     return f"{minutes:02d}:{seconds:02d}"
+
+def download_video_worker(job_id, url, format_id, download_dir):
+    """Background worker to download video"""
+    try:
+        cookies_path = setup_cookies()
+        
+        ydl_opts = {
+            'format': format_id,
+            'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
+            'quiet': True,
+            'no_warnings': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+        }
+        
+        if cookies_path:
+            ydl_opts['cookiefile'] = cookies_path
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+            
+            download_jobs[job_id].update({
+                'status': 'completed',
+                'filename': filename,
+                'title': info.get('title', 'video'),
+                'filesize': os.path.getsize(filename),
+                'completed_at': time.time()
+            })
+            
+    except Exception as e:
+        download_jobs[job_id].update({
+            'status': 'error',
+            'error': str(e)
+        })
+    finally:
+        if cookies_path and os.path.exists(cookies_path):
+            try:
+                os.unlink(cookies_path)
+            except:
+                pass
 
 @app.route('/')
 def index():
@@ -51,7 +97,6 @@ def index():
 
 @app.route('/get_formats', methods=['POST'])
 def get_formats():
-    """Get all available formats for a video"""
     cookies_path = None
     try:
         url = request.json.get('url')
@@ -61,82 +106,41 @@ def get_formats():
         print(f"🔍 Processing URL: {url}")
         cookies_path = setup_cookies()
 
-        # Enhanced yt-dlp options with better format extraction
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
-            # Force better format extraction
-            'format': 'bestvideo+bestaudio/best',
-            'ignoreerrors': True,
         }
         
         if cookies_path:
             ydl_opts['cookiefile'] = cookies_path
-            print("🔑 Using cookies for authentication")
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            print(f"📹 Video title: {info.get('title')}")
-            print(f"📊 Available formats: {len(info.get('formats', []))}")
             
-            # Debug: Print all available formats
-            for i, fmt in enumerate(info.get('formats', [])):
-                print(f"Format {i}: {fmt.get('format_id')} | {fmt.get('ext')} | {fmt.get('format_note')} | {fmt.get('vcodec')} | {fmt.get('acodec')}")
-            
-            # Organize formats by type
+            # Get available formats
             video_formats = []
             audio_formats = []
             
             for fmt in info.get('formats', []):
+                if not fmt.get('url'):
+                    continue  # Skip formats without URLs
+                    
                 format_info = {
                     'format_id': fmt.get('format_id'),
                     'ext': fmt.get('ext', 'unknown'),
-                    'resolution': fmt.get('format_note', 'N/A'),
+                    'resolution': fmt.get('format_note', 'Unknown'),
                     'filesize': fmt.get('filesize'),
                     'filesize_readable': format_size(fmt.get('filesize')),
                     'vcodec': fmt.get('vcodec', 'none'),
                     'acodec': fmt.get('acodec', 'none'),
-                    'quality': fmt.get('quality', 0),
-                    'url': fmt.get('url')  # For debugging
                 }
                 
-                # Better format categorization
-                has_video = fmt.get('vcodec') not in [None, 'none']
-                has_audio = fmt.get('acodec') not in [None, 'none']
-                
-                if has_video:
+                if fmt.get('vcodec') != 'none':
                     video_formats.append(format_info)
-                elif has_audio:
+                elif fmt.get('acodec') != 'none':
                     audio_formats.append(format_info)
 
-            # If no formats found, try alternative extraction
-            if not video_formats and not audio_formats:
-                print("⚠️ No formats found, trying alternative method...")
-                return jsonify({
-                    'error': 'No downloadable formats found',
-                    'title': info.get('title'),
-                    'duration': info.get('duration'),
-                    'debug_info': {
-                        'formats_count': len(info.get('formats', [])),
-                        'age_restricted': info.get('age_limit'),
-                        'is_live': info.get('is_live'),
-                        'requires_login': info.get('requires_login')
-                    }
-                }), 404
-
-            # Sort video formats by resolution (best first)
-            def get_resolution_rank(format_info):
-                res = format_info['resolution']
-                resolution_rank = {
-                    '4K': 4000, '1440p': 1440, '1080p': 1080, 
-                    '720p': 720, '480p': 480, '360p': 360, 
-                    '240p': 240, '144p': 144
-                }
-                return resolution_rank.get(res, 0)
-            
-            video_formats.sort(key=get_resolution_rank, reverse=True)
-            
             response_data = {
                 'status': 'success',
                 'title': info.get('title', 'Unknown Title'),
@@ -162,10 +166,9 @@ def get_formats():
             except:
                 pass
 
-@app.route('/download', methods=['POST'])
-def download_video():
-    """Download specific format"""
-    cookies_path = None
+@app.route('/start_download', methods=['POST'])
+def start_download():
+    """Start a background download"""
     try:
         url = request.json.get('url')
         format_id = request.json.get('format_id')
@@ -173,121 +176,123 @@ def download_video():
         if not url or not format_id:
             return jsonify({'error': 'URL and format ID required'}), 400
 
-        cookies_path = setup_cookies()
-
-        # Enhanced download options
-        ydl_opts = {
-            'format': format_id,
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            }
+        # Create job
+        job_id = f"job_{int(time.time())}_{os.urandom(4).hex()}"
+        download_dir = tempfile.mkdtemp()
+        
+        download_jobs[job_id] = {
+            'status': 'downloading',
+            'url': url,
+            'format_id': format_id,
+            'download_dir': download_dir,
+            'started_at': time.time(),
+            'progress': 0
         }
         
-        if cookies_path:
-            ydl_opts['cookiefile'] = cookies_path
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            
-            video_url = info.get('url')
-            if not video_url:
-                return jsonify({'error': 'Could not extract video URL for selected format'}), 500
-            
-            # Get selected format details
-            selected_format = None
-            for fmt in info.get('formats', []):
-                if fmt.get('format_id') == format_id:
-                    selected_format = fmt
-                    break
-            
-            title = info.get('title', 'video')
-            ext = selected_format.get('ext', 'mp4') if selected_format else 'mp4'
-            
-            clean_title = clean_filename(title)
-            filename = f"{clean_title}.{ext}"
-            
-            response_data = {
-                'status': 'success',
-                'title': title,
-                'filename': filename,
-                'download_url': video_url,
-                'format': ext.upper(),
-                'resolution': selected_format.get('format_note', 'N/A') if selected_format else 'N/A',
-                'used_cookies': bool(cookies_path)
-            }
-            
-            return jsonify(response_data)
-            
+        # Start background download
+        thread = threading.Thread(
+            target=download_video_worker,
+            args=(job_id, url, format_id, download_dir)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'status': 'started',
+            'job_id': job_id,
+            'message': 'Download started in background'
+        })
+        
     except Exception as e:
-        error_msg = str(e)
-        print(f"❌ Download error: {error_msg}")
-        return jsonify({'error': f'Download failed: {error_msg}'}), 500
-    finally:
-        if cookies_path and os.path.exists(cookies_path):
-            try:
-                os.unlink(cookies_path)
-            except:
-                pass
+        return jsonify({'error': f'Failed to start download: {str(e)}'}), 500
 
-@app.route('/debug_url', methods=['POST'])
-def debug_url():
-    """Debug endpoint to see what's happening with a URL"""
-    cookies_path = None
+@app.route('/check_download/<job_id>')
+def check_download(job_id):
+    """Check download status"""
+    job = download_jobs.get(job_id)
+    
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    
+    # Clean up old jobs
+    if time.time() - job.get('started_at', 0) > JOB_TIMEOUT:
+        del download_jobs[job_id]
+        return jsonify({'error': 'Job expired'}), 404
+    
+    response = {
+        'status': job['status'],
+        'job_id': job_id
+    }
+    
+    if job['status'] == 'completed':
+        response.update({
+            'filename': job['filename'],
+            'title': job['title'],
+            'filesize': job['filesize'],
+            'download_url': f'/download_file/{job_id}'
+        })
+    elif job['status'] == 'error':
+        response['error'] = job['error']
+    
+    return jsonify(response)
+
+@app.route('/download_file/<job_id>')
+def download_file(job_id):
+    """Serve the downloaded file"""
+    job = download_jobs.get(job_id)
+    
+    if not job or job['status'] != 'completed':
+        return jsonify({'error': 'File not available'}), 404
+    
     try:
-        url = request.json.get('url')
-        if not url:
-            return jsonify({'error': 'No URL provided'}), 400
-
-        cookies_path = setup_cookies()
-
-        ydl_opts = {
-            'quiet': False,  # Show warnings for debugging
-            'no_warnings': False,
-            'extract_flat': False,
-            'listformats': True,
-        }
+        filename = job['filename']
+        safe_filename = secure_filename(os.path.basename(filename))
         
-        if cookies_path:
-            ydl_opts['cookiefile'] = cookies_path
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            
-            debug_info = {
-                'title': info.get('title'),
-                'duration': info.get('duration'),
-                'formats_count': len(info.get('formats', [])),
-                'age_restricted': info.get('age_limit'),
-                'is_live': info.get('is_live'),
-                'requires_login': info.get('requires_login'),
-                'availability': info.get('availability'),
-                'formats_preview': []
-            }
-            
-            # Show first 5 formats for preview
-            for fmt in info.get('formats', [])[:5]:
-                debug_info['formats_preview'].append({
-                    'format_id': fmt.get('format_id'),
-                    'ext': fmt.get('ext'),
-                    'resolution': fmt.get('format_note'),
-                    'vcodec': fmt.get('vcodec'),
-                    'acodec': fmt.get('acodec'),
-                    'url_present': bool(fmt.get('url'))
-                })
-            
-            return jsonify(debug_info)
-            
+        response = send_file(
+            filename,
+            as_attachment=True,
+            download_name=safe_filename
+        )
+        
+        # Clean up job after download
+        del download_jobs[job_id]
+        
+        return response
+        
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    finally:
-        if cookies_path and os.path.exists(cookies_path):
-            try:
-                os.unlink(cookies_path)
-            except:
-                pass
+        return jsonify({'error': f'Failed to serve file: {str(e)}'}), 500
+
+# Cleanup old jobs periodically
+def cleanup_old_jobs():
+    while True:
+        try:
+            current_time = time.time()
+            expired_jobs = [
+                job_id for job_id, job in download_jobs.items()
+                if current_time - job.get('started_at', 0) > JOB_TIMEOUT
+            ]
+            for job_id in expired_jobs:
+                # Clean up files
+                job = download_jobs[job_id]
+                if 'filename' in job and os.path.exists(job['filename']):
+                    try:
+                        os.remove(job['filename'])
+                    except:
+                        pass
+                if 'download_dir' in job and os.path.exists(job['download_dir']):
+                    try:
+                        os.rmdir(job['download_dir'])
+                    except:
+                        pass
+                del download_jobs[job_id]
+        except:
+            pass
+        time.sleep(60)  # Check every minute
+
+# Start cleanup thread
+cleanup_thread = threading.Thread(target=cleanup_old_jobs)
+cleanup_thread.daemon = True
+cleanup_thread.start()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
