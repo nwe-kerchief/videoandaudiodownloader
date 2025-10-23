@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: video-downloader
+    env: python
+    buildCommand: apt-get update && apt-get install -y ffmpeg && pip install -r requirements.txt
+    startCommand: gunicorn app:app --timeout 900 --workers 2 --worker-class gthread --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.6
