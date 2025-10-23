@@ -333,262 +333,144 @@
 
     <script>
         let currentVideoInfo = null;
-        let selectedFormatId = null;
-        let selectedFormatText = '';
+let selectedFormatId = null;
+let selectedFormatText = '';
+let currentJobId = null;
+let checkInterval = null;
 
-        function showFormats(data) {
-            currentVideoInfo = data;
-            
-            // Show video info
-            document.getElementById('videoTitle').textContent = data.title;
-            document.getElementById('videoMeta').textContent = 
-                `Duration: ${data.duration_readable} • Formats available: ${data.total_formats || 0}`;
-            document.getElementById('videoInfo').style.display = 'block';
-            
-            if (data.total_formats === 0) {
-                showError('No downloadable formats found. This video might be age-restricted, region-locked, or require login.');
-                return;
-            }
-            
-            // Show video formats
-            const videoFormatsContainer = document.getElementById('videoFormats');
-            videoFormatsContainer.innerHTML = '';
-            
-            if (data.video_formats && data.video_formats.length > 0) {
-                data.video_formats.forEach(format => {
-                    const formatCard = createFormatCard(format, 'video');
-                    videoFormatsContainer.appendChild(formatCard);
-                });
-            } else {
-                videoFormatsContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No video formats available</div>';
-            }
-            
-            // Show audio formats
-            const audioFormatsContainer = document.getElementById('audioFormats');
-            audioFormatsContainer.innerHTML = '';
-            
-            if (data.audio_formats && data.audio_formats.length > 0) {
-                data.audio_formats.forEach(format => {
-                    const formatCard = createFormatCard(format, 'audio');
-                    audioFormatsContainer.appendChild(formatCard);
-                });
-            } else {
-                audioFormatsContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No audio formats available</div>';
-            }
-            
-            // Show formats section
-            document.getElementById('formatsSection').style.display = 'block';
-            
-            // Update step indicator
-            updateStepIndicator(2);
+// ... keep all your existing functions until downloadSelectedFormat ...
+
+function downloadSelectedFormat() {
+    if (!selectedFormatId || !currentVideoInfo) {
+        showError('Please select a format first');
+        return;
+    }
+    
+    const downloadBtn = document.getElementById('downloadBtn');
+    const loading = document.getElementById('loading');
+    
+    loading.style.display = 'block';
+    downloadBtn.disabled = true;
+    downloadBtn.textContent = 'Starting download...';
+    
+    fetch('/start_download', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            url: document.getElementById('videoUrl').value,
+            format_id: selectedFormatId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            loading.style.display = 'none';
+            downloadBtn.disabled = false;
+            downloadBtn.textContent = '📥 Download Selected Format';
+            showError(data.error);
+        } else {
+            currentJobId = data.job_id;
+            downloadBtn.style.display = 'none';
+            startCheckingProgress();
         }
+    })
+    .catch(err => {
+        loading.style.display = 'none';
+        downloadBtn.disabled = false;
+        downloadBtn.textContent = '📥 Download Selected Format';
+        showError('Download failed: ' + err.message);
+    });
+}
 
-        function getFormats() {
-            const url = document.getElementById('videoUrl').value;
-            const getFormatsBtn = document.getElementById('getFormatsBtn');
-            const loading = document.getElementById('loading');
-            const error = document.getElementById('error');
-            
-            if (!url) {
-                showError('Please enter a video URL');
-                return;
-            }
-            
-            // Reset UI
-            resetUI();
-            loading.style.display = 'block';
-            getFormatsBtn.disabled = true;
-            getFormatsBtn.textContent = 'Loading...';
-            
-            // Update step indicator
-            updateStepIndicator(1);
-            
-            fetch('/get_formats', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ url: url })
-            })
-            .then(response => response.json())
-            .then(data => {
-                loading.style.display = 'none';
-                getFormatsBtn.disabled = false;
-                getFormatsBtn.textContent = 'Get Formats';
-                
-                if (data.error) {
-                    showError(data.error);
-                } else {
-                    showFormats(data);
-                }
-            })
-            .catch(err => {
-                loading.style.display = 'none';
-                getFormatsBtn.disabled = false;
-                getFormatsBtn.textContent = 'Get Formats';
-                showError('Network error: ' + err.message);
-            });
-        }
+function startCheckingProgress() {
+    const statusDiv = document.createElement('div');
+    statusDiv.id = 'downloadStatus';
+    statusDiv.innerHTML = `
+        <div style="text-align: center; padding: 20px; background: #f8f9fa; border-radius: 10px; margin: 20px 0;">
+            <div class="spinner" style="width: 30px; height: 30px; margin: 0 auto 10px;"></div>
+            <p>Downloading... Please wait</p>
+            <div id="progressText" style="color: #666; font-size: 0.9em;"></div>
+        </div>
+    `;
+    
+    document.getElementById('downloadSection').appendChild(statusDiv);
+    
+    // Check progress every 2 seconds
+    checkInterval = setInterval(checkDownloadProgress, 2000);
+}
 
-        function showFormats(data) {
-            currentVideoInfo = data;
-            
-            // Show video info
-            document.getElementById('videoTitle').textContent = data.title;
-            document.getElementById('videoMeta').textContent = 
-                `Duration: ${data.duration_readable} • Formats available: ${data.video_formats.length + data.audio_formats.length}`;
-            document.getElementById('videoInfo').style.display = 'block';
-            
-            // Show video formats
-            const videoFormatsContainer = document.getElementById('videoFormats');
-            videoFormatsContainer.innerHTML = '';
-            
-            data.video_formats.forEach(format => {
-                const formatCard = createFormatCard(format, 'video');
-                videoFormatsContainer.appendChild(formatCard);
-            });
-            
-            // Show audio formats
-            const audioFormatsContainer = document.getElementById('audioFormats');
-            audioFormatsContainer.innerHTML = '';
-            
-            data.audio_formats.forEach(format => {
-                const formatCard = createFormatCard(format, 'audio');
-                audioFormatsContainer.appendChild(formatCard);
-            });
-            
-            // Show formats section
-            document.getElementById('formatsSection').style.display = 'block';
-            
-            // Update step indicator
-            updateStepIndicator(2);
-        }
-
-        function createFormatCard(format, type) {
-            const card = document.createElement('div');
-            card.className = 'format-card';
-            card.onclick = () => selectFormat(format, type, card);
-            
-            const resolution = type === 'audio' ? 'Audio Only' : (format.resolution === 'N/A' ? 'Unknown Quality' : format.resolution);
-            const details = [];
-            
-            if (format.ext && format.ext !== 'unknown') details.push(format.ext.toUpperCase());
-            if (format.vcodec && format.vcodec !== 'none') details.push(format.vcodec);
-            if (format.acodec && format.acodec !== 'none') details.push(format.acodec);
-            
-            card.innerHTML = `
-                <div class="format-resolution">${resolution}</div>
-                <div class="format-details">
-                    ${details.join(' • ')}
+function checkDownloadProgress() {
+    if (!currentJobId) return;
+    
+    fetch(`/check_download/${currentJobId}`)
+    .then(response => response.json())
+    .then(data => {
+        const statusDiv = document.getElementById('downloadStatus');
+        const progressText = document.getElementById('progressText');
+        
+        if (data.status === 'completed') {
+            clearInterval(checkInterval);
+            statusDiv.innerHTML = `
+                <div style="text-align: center; padding: 20px; background: #d4edda; border-radius: 10px; margin: 20px 0;">
+                    <p style="color: #155724; font-weight: bold;">✅ Download Complete!</p>
+                    <p>File: ${data.title}</p>
+                    <p>Size: ${formatSize(data.filesize)}</p>
+                    <button class="btn btn-success" onclick="finalDownload('${data.download_url}', '${data.title}')">
+                        📥 Download Now
+                    </button>
                 </div>
-                <div class="format-size">${format.filesize_readable}</div>
             `;
-            
-            return card;
-        }
-
-        function selectFormat(format, type, card) {
-            // Remove selected class from all cards
-            document.querySelectorAll('.format-card').forEach(c => {
-                c.classList.remove('selected');
-            });
-            
-            // Add selected class to clicked card
-            card.classList.add('selected');
-            
-            // Store selected format
-            selectedFormatId = format.format_id;
-            selectedFormatText = `${type === 'audio' ? 'Audio' : format.resolution} (${format.ext.toUpperCase()}) - ${format.filesize_readable}`;
-            
-            // Show selected format and download button
-            document.getElementById('selectedFormatText').textContent = selectedFormatText;
-            document.getElementById('selectedFormat').style.display = 'block';
-            document.getElementById('downloadSection').style.display = 'block';
-            
-            // Update step indicator
-            updateStepIndicator(3);
-        }
-
-        function downloadSelectedFormat() {
-            if (!selectedFormatId || !currentVideoInfo) {
-                showError('Please select a format first');
-                return;
+        } else if (data.status === 'error') {
+            clearInterval(checkInterval);
+            statusDiv.innerHTML = `
+                <div style="text-align: center; padding: 20px; background: #f8d7da; border-radius: 10px; margin: 20px 0;">
+                    <p style="color: #721c24;">❌ Download Failed</p>
+                    <p>${data.error}</p>
+                </div>
+            `;
+            document.getElementById('downloadBtn').style.display = 'block';
+        } else {
+            // Still downloading
+            if (progressText) {
+                progressText.textContent = 'Processing...';
             }
-            
-            const downloadBtn = document.getElementById('downloadBtn');
-            const loading = document.getElementById('loading');
-            
-            loading.style.display = 'block';
-            downloadBtn.disabled = true;
-            downloadBtn.textContent = 'Preparing download...';
-            
-            fetch('/download', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    url: document.getElementById('videoUrl').value,
-                    format_id: selectedFormatId
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                loading.style.display = 'none';
-                downloadBtn.disabled = false;
-                downloadBtn.textContent = '📥 Download Selected Format';
-                
-                if (data.error) {
-                    showError(data.error);
-                } else {
-                    // Create download link and trigger download
-                    const a = document.createElement('a');
-                    a.href = data.download_url;
-                    a.download = data.filename;
-                    a.click();
-                }
-            })
-            .catch(err => {
-                loading.style.display = 'none';
-                downloadBtn.disabled = false;
-                downloadBtn.textContent = '📥 Download Selected Format';
-                showError('Download failed: ' + err.message);
-            });
         }
+    })
+    .catch(err => {
+        console.error('Progress check error:', err);
+    });
+}
 
-        function showError(message) {
-            const errorDiv = document.getElementById('error');
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-        }
+function finalDownload(downloadUrl, title) {
+    // Trigger the download
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.click();
+    
+    // Reset UI after a delay
+    setTimeout(() => {
+        document.getElementById('downloadBtn').style.display = 'block';
+        document.getElementById('downloadBtn').disabled = false;
+        document.getElementById('downloadBtn').textContent = '📥 Download Selected Format';
+        document.getElementById('downloadStatus').remove();
+        document.getElementById('loading').style.display = 'none';
+    }, 2000);
+}
 
-        function resetUI() {
-            document.getElementById('error').style.display = 'none';
-            document.getElementById('videoInfo').style.display = 'none';
-            document.getElementById('formatsSection').style.display = 'none';
-            document.getElementById('selectedFormat').style.display = 'none';
-            document.getElementById('downloadSection').style.display = 'none';
-            selectedFormatId = null;
-            selectedFormatText = '';
-        }
-
-        function updateStepIndicator(step) {
-            const steps = document.querySelectorAll('.step');
-            steps.forEach((s, index) => {
-                if (index + 1 === step) {
-                    s.classList.add('active');
-                } else {
-                    s.classList.remove('active');
-                }
-            });
-        }
-
-        // Allow Enter key to submit URL
-        document.getElementById('videoUrl').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                getFormats();
-            }
-        });
+function formatSize(bytes) {
+    if (!bytes) return 'Unknown';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = bytes;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex++;
+    }
+    return `${size.toFixed(1)} ${units[unitIndex]}`;
+}
     </script>
 </body>
 </html>
+
