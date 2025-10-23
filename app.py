@@ -58,21 +58,27 @@ def download_video_background(download_id, url, format_type, cookies_path):
         base = f"video_{url_hash}_{int(time.time())}"
         
         if format_type == 'mp3':
-            output_file = f"/tmp/{base}.mp3"
-            cmd = [
-                "yt-dlp", "-x", "--audio-format", "mp3",
-                "--audio-quality", "0", "-o", output_file,
-                "--no-warnings", "--no-playlist"
-            ]
-        else:
-            output_file = f"/tmp/{base}.mp4"
-            # SIMPLEST FORMAT - just get best video up to 720p
+            output_file = f"/tmp/{base}.%(ext)s"
             cmd = [
                 "yt-dlp",
-                "-f", "best[height<=720]/best",  # Simple fallback
-                "--recode-video", "mp4",  # Force convert to MP4
+                "-x",
+                "--audio-format", "mp3",
+                "--audio-quality", "0",
                 "-o", output_file,
-                "--no-warnings", "--no-playlist"
+                "--no-warnings",
+                "--no-playlist"
+            ]
+        else:
+            output_file = f"/tmp/{base}.%(ext)s"
+            # NO FORMAT FILTER - let yt-dlp use its default (bv*+ba/b)
+            # This ALWAYS works
+            cmd = [
+                "yt-dlp",
+                "-S", "res:720,ext:mp4:m4a",  # Prefer 720p and mp4
+                "--merge-output-format", "mp4",
+                "-o", output_file,
+                "--no-warnings",
+                "--no-playlist"
             ]
         
         if cookies_path:
@@ -80,7 +86,7 @@ def download_video_background(download_id, url, format_type, cookies_path):
         
         cmd.append(url)
         
-        logger.info(f"📥 [{download_id}] Downloading: {url[:60]}")
+        logger.info(f"📥 [{download_id}] Downloading...")
         
         process = subprocess.Popen(
             cmd,
@@ -92,17 +98,23 @@ def download_video_background(download_id, url, format_type, cookies_path):
         try:
             stdout, stderr = process.communicate(timeout=600)
             
-            if stderr:
-                logger.info(f"📄 [{download_id}] yt-dlp: {stderr[:300]}")
-            
             if process.returncode == 0:
-                # Find downloaded file
+                # Find downloaded file (extension varies)
                 found_file = None
-                for ext in ['.mp4', '.webm', '.mkv', '.mp3', '.m4a']:
-                    test_file = output_file.replace('.mp4' if format_type == 'mp4' else '.mp3', ext)
-                    if os.path.exists(test_file):
-                        found_file = test_file
+                possible_exts = ['.mp4', '.webm', '.mkv', '.mp3', '.m4a', '.opus']
+                
+                for ext in possible_exts:
+                    pattern = f"/tmp/{base}{ext}"
+                    if os.path.exists(pattern):
+                        found_file = pattern
                         break
+                
+                # Also check with wildcard
+                if not found_file:
+                    import glob
+                    matches = glob.glob(f"/tmp/{base}.*")
+                    if matches:
+                        found_file = matches[0]
                 
                 if found_file:
                     file_size = os.path.getsize(found_file)
@@ -116,7 +128,7 @@ def download_video_background(download_id, url, format_type, cookies_path):
                         }
                         logger.error(f"❌ [{download_id}] Too large: {size_mb:.1f}MB")
                     else:
-                        logger.info(f"✅ [{download_id}] Ready: {size_mb:.2f}MB")
+                        logger.info(f"✅ [{download_id}] Ready: {size_mb:.2f}MB ({os.path.basename(found_file)})")
                         download_status[download_id] = {
                             'status': 'ready',
                             'file': found_file,
@@ -129,11 +141,12 @@ def download_video_background(download_id, url, format_type, cookies_path):
                         'error': 'File not found after download'
                     }
             else:
-                error_msg = stderr.split('\n')[-2] if stderr else 'Unknown error'
-                logger.error(f"❌ [{download_id}] Failed: {error_msg}")
+                logger.error(f"❌ [{download_id}] Failed with code {process.returncode}")
+                if stderr:
+                    logger.error(f"stderr: {stderr[:300]}")
                 download_status[download_id] = {
                     'status': 'error',
-                    'error': f'Download failed. Video may be unavailable or restricted.'
+                    'error': 'Download failed. Video may be restricted or unavailable.'
                 }
         
         except subprocess.TimeoutExpired:
@@ -248,4 +261,5 @@ def health():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
