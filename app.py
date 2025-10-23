@@ -2,18 +2,14 @@ from flask import Flask, request, send_file, jsonify, render_template
 import subprocess
 import os
 import hashlib
-import re
-from datetime import datetime
+import time
 import logging
 import threading
-import time
+import glob
 
 app = Flask(__name__)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
 YOUTUBE_COOKIES = os.environ.get('YOUTUBE_COOKIES', '')
@@ -24,61 +20,45 @@ def setup_cookies():
         return None
     try:
         cookies_path = '/tmp/cookies.txt'
-        with open(cookies_path, 'w', encoding='utf-8') as f:
+        with open(cookies_path, 'w') as f:
             f.write(YOUTUBE_COOKIES)
         return cookies_path
     except:
         return None
 
-def is_valid_url(url):
-    patterns = [r'(youtube\.com|youtu\.be)', r'tiktok\.com']
-    return any(re.search(p, url, re.IGNORECASE) for p in patterns)
-
 def cleanup_old_files():
     try:
         now = time.time()
         for f in os.listdir('/tmp'):
-            if f.endswith(('.mp4', '.mp3', '.webm', '.txt')) and f.startswith('video_'):
+            if f.startswith('video_'):
                 fp = os.path.join('/tmp', f)
                 if os.path.isfile(fp) and now - os.path.getmtime(fp) > 1800:
                     try:
                         os.remove(fp)
-                        logger.info(f"🧹 Cleaned: {f}")
                     except:
                         pass
     except:
         pass
 
 def download_video_background(download_id, url, format_type, cookies_path):
-    """Background download task"""
     try:
-        download_status[download_id] = {'status': 'downloading', 'progress': 0}
+        download_status[download_id] = {'status': 'downloading'}
         
         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-        base = f"video_{url_hash}_{int(time.time())}"
+        output_template = f"/tmp/video_{url_hash}_%(title).50s.%(ext)s"
         
         if format_type == 'mp3':
-            output_file = f"/tmp/{base}.%(ext)s"
             cmd = [
                 "yt-dlp",
-                "-x",
-                "--audio-format", "mp3",
+                "-x", "--audio-format", "mp3",
                 "--audio-quality", "0",
-                "-o", output_file,
-                "--no-warnings",
-                "--no-playlist"
+                "-o", output_template
             ]
         else:
-            output_file = f"/tmp/{base}.%(ext)s"
-            # NO FORMAT FILTER - let yt-dlp use its default (bv*+ba/b)
-            # This ALWAYS works
+            # EXACT LAMBDA METHOD - NO FORMAT SPECIFIED
             cmd = [
                 "yt-dlp",
-                "-S", "res:720,ext:mp4:m4a",  # Prefer 720p and mp4
-                "--merge-output-format", "mp4",
-                "-o", output_file,
-                "--no-warnings",
-                "--no-playlist"
+                "-o", output_template
             ]
         
         if cookies_path:
@@ -86,84 +66,54 @@ def download_video_background(download_id, url, format_type, cookies_path):
         
         cmd.append(url)
         
-        logger.info(f"📥 [{download_id}] Downloading...")
+        logger.info(f"📥 [{download_id}] Starting...")
         
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         
-        try:
-            stdout, stderr = process.communicate(timeout=600)
+        if result.returncode == 0:
+            # Find downloaded file
+            files = glob.glob(f"/tmp/video_{url_hash}_*.*")
             
-            if process.returncode == 0:
-                # Find downloaded file (extension varies)
-                found_file = None
-                possible_exts = ['.mp4', '.webm', '.mkv', '.mp3', '.m4a', '.opus']
+            if files:
+                file_path = files[0]
+                file_size = os.path.getsize(file_path)
+                size_mb = file_size / (1024 * 1024)
                 
-                for ext in possible_exts:
-                    pattern = f"/tmp/{base}{ext}"
-                    if os.path.exists(pattern):
-                        found_file = pattern
-                        break
-                
-                # Also check with wildcard
-                if not found_file:
-                    import glob
-                    matches = glob.glob(f"/tmp/{base}.*")
-                    if matches:
-                        found_file = matches[0]
-                
-                if found_file:
-                    file_size = os.path.getsize(found_file)
-                    size_mb = file_size / (1024 * 1024)
-                    
-                    if file_size > 200 * 1024 * 1024:
-                        os.remove(found_file)
-                        download_status[download_id] = {
-                            'status': 'error',
-                            'error': f'File too large: {size_mb:.1f}MB (max 200MB)'
-                        }
-                        logger.error(f"❌ [{download_id}] Too large: {size_mb:.1f}MB")
-                    else:
-                        logger.info(f"✅ [{download_id}] Ready: {size_mb:.2f}MB ({os.path.basename(found_file)})")
-                        download_status[download_id] = {
-                            'status': 'ready',
-                            'file': found_file,
-                            'size': size_mb
-                        }
-                else:
-                    logger.error(f"❌ [{download_id}] File not found")
+                if file_size > 300 * 1024 * 1024:
+                    os.remove(file_path)
                     download_status[download_id] = {
                         'status': 'error',
-                        'error': 'File not found after download'
+                        'error': f'File too large: {size_mb:.1f}MB (max 300MB)'
+                    }
+                else:
+                    logger.info(f"✅ [{download_id}] Ready: {size_mb:.2f}MB")
+                    download_status[download_id] = {
+                        'status': 'ready',
+                        'file': file_path,
+                        'size': size_mb
                     }
             else:
-                logger.error(f"❌ [{download_id}] Failed with code {process.returncode}")
-                if stderr:
-                    logger.error(f"stderr: {stderr[:300]}")
                 download_status[download_id] = {
                     'status': 'error',
-                    'error': 'Download failed. Video may be restricted or unavailable.'
+                    'error': 'File not found'
                 }
-        
-        except subprocess.TimeoutExpired:
-            process.kill()
-            logger.error(f"⏰ [{download_id}] Timeout")
+        else:
+            logger.error(f"❌ [{download_id}] Error: {result.stderr[:200]}")
             download_status[download_id] = {
                 'status': 'error',
-                'error': 'Download timeout (10 minutes)'
+                'error': 'Download failed'
             }
     
+    except subprocess.TimeoutExpired:
+        download_status[download_id] = {
+            'status': 'error',
+            'error': 'Timeout (10 min)'
+        }
     except Exception as e:
-        logger.error(f"💥 [{download_id}] Exception: {e}")
         download_status[download_id] = {
             'status': 'error',
             'error': str(e)
         }
-
 
 @app.route('/')
 def index():
@@ -171,7 +121,6 @@ def index():
 
 @app.route('/api/start-download', methods=['POST'])
 def start_download():
-    """Start background download"""
     try:
         cleanup_old_files()
         
@@ -181,9 +130,6 @@ def start_download():
         
         if not url:
             return jsonify({"error": "URL required"}), 400
-        
-        if not is_valid_url(url):
-            return jsonify({"error": "Only YouTube/TikTok supported"}), 400
         
         download_id = hashlib.md5(f"{url}{time.time()}".encode()).hexdigest()[:12]
         cookies_path = setup_cookies()
@@ -195,22 +141,15 @@ def start_download():
         thread.daemon = True
         thread.start()
         
-        logger.info(f"🚀 [{download_id}] Started for: {url[:50]}")
-        
-        return jsonify({
-            "download_id": download_id,
-            "status": "started"
-        }), 200
+        return jsonify({"download_id": download_id}), 200
     
     except Exception as e:
-        logger.error(f"Start error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/status/<download_id>')
 def check_status(download_id):
     if download_id not in download_status:
         return jsonify({"error": "Not found"}), 404
-    
     return jsonify(download_status[download_id]), 200
 
 @app.route('/api/download/<download_id>')
@@ -232,8 +171,7 @@ def get_download(download_id):
         response = send_file(
             file_path,
             as_attachment=True,
-            download_name=os.path.basename(file_path),
-            mimetype='application/octet-stream'
+            download_name=os.path.basename(file_path)
         )
         
         @response.call_on_close
@@ -242,24 +180,19 @@ def get_download(download_id):
                 time.sleep(5)
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                if download_id in download_status:
-                    del download_status[download_id]
-                logger.info(f"🧹 [{download_id}] Cleaned up")
+                del download_status[download_id]
             except:
                 pass
         
         return response
     
     except Exception as e:
-        logger.error(f"Download error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "ok", "active_downloads": len(download_status)}), 200
+    return jsonify({"status": "ok"}), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port, debug=False)
-
-
+    app.run(host='0.0.0.0', port=port)
