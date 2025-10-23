@@ -3,28 +3,28 @@ import yt_dlp
 import re
 import os
 import tempfile
+import base64
 
 app = Flask(__name__)
 
-# Clean filename for safe download
 def clean_filename(filename):
     return re.sub(r'[^\w\s-]', '', filename).strip()
 
 def setup_cookies():
-    """Setup cookies from environment variable or file"""
+    """Setup cookies from environment variable only"""
     cookies_path = None
     
-    # Option 1: Cookies from environment variable
-    cookies_content = os.environ.get('YT_COOKIES')
-    if cookies_content:
-        # Create temporary cookies file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            f.write(cookies_content)
-            cookies_path = f.name
-    
-    # Option 2: Cookies from file (for local development)
-    elif os.path.exists('cookies.txt'):
-        cookies_path = 'cookies.txt'
+    # Get cookies from environment variable (base64 encoded)
+    cookies_b64 = os.environ.get('YT_COOKIES_B64')
+    if cookies_b64:
+        try:
+            cookies_content = base64.b64decode(cookies_b64).decode('utf-8')
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                f.write(cookies_content)
+                cookies_path = f.name
+                print("Cookies loaded from environment variable")
+        except Exception as e:
+            print(f"Error decoding cookies from env: {e}")
     
     return cookies_path
 
@@ -40,10 +40,10 @@ def download_video():
         if not url:
             return jsonify({'error': 'No URL provided'}), 400
 
-        # Setup cookies if available
+        # Setup cookies from environment
         cookies_path = setup_cookies()
 
-        # Configure yt-dlp with cookies
+        # Configure yt-dlp
         ydl_opts = {
             'format': 'best[ext=mp4]/best[ext=webm]/best',
             'quiet': True,
@@ -54,7 +54,7 @@ def download_video():
         # Add cookies if available
         if cookies_path:
             ydl_opts['cookiefile'] = cookies_path
-            print(f"Using cookies from: {cookies_path}")
+            print("Using cookies for authentication")
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             # Extract info without downloading
@@ -94,56 +94,7 @@ def download_video():
         return jsonify({'error': f'Download failed: {error_msg}'}), 500
     finally:
         # Clean up temporary cookies file
-        if cookies_path and cookies_path.startswith(tempfile.gettempdir()):
-            try:
-                os.unlink(cookies_path)
-            except:
-                pass
-
-@app.route('/get_formats', methods=['POST'])
-def get_formats():
-    """Get available formats for a URL"""
-    cookies_path = None
-    try:
-        url = request.json.get('url')
-        if not url:
-            return jsonify({'error': 'No URL provided'}), 400
-
-        # Setup cookies
-        cookies_path = setup_cookies()
-
-        ydl_opts = {
-            'list_formats': True,
-            'quiet': True,
-        }
-        
-        if cookies_path:
-            ydl_opts['cookiefile'] = cookies_path
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            formats = []
-            
-            for fmt in info.get('formats', []):
-                formats.append({
-                    'format_id': fmt.get('format_id'),
-                    'ext': fmt.get('ext'),
-                    'resolution': fmt.get('format_note', 'N/A'),
-                    'filesize': fmt.get('filesize'),
-                    'vcodec': fmt.get('vcodec', 'N/A'),
-                    'acodec': fmt.get('acodec', 'N/A')
-                })
-            
-            return jsonify({
-                'title': info.get('title'),
-                'formats': formats,
-                'used_cookies': bool(cookies_path)
-            })
-            
-    except Exception as e:
-        return jsonify({'error': f'Failed to get formats: {str(e)}'}), 500
-    finally:
-        if cookies_path and cookies_path.startswith(tempfile.gettempdir()):
+        if cookies_path and os.path.exists(cookies_path):
             try:
                 os.unlink(cookies_path)
             except:
