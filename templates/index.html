@@ -3,16 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Downloader - YouTube & TikTok</title>
+    <title>Video Downloader</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Segoe UI', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
@@ -20,7 +15,6 @@
             justify-content: center;
             padding: 20px;
         }
-        
         .container {
             background: white;
             border-radius: 20px;
@@ -28,73 +22,23 @@
             max-width: 600px;
             width: 100%;
             padding: 40px;
-            animation: fadeIn 0.5s ease-in;
         }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 32px;
-            font-weight: 700;
-        }
-        
-        .subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 14px;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #555;
-            font-weight: 600;
-            font-size: 14px;
-        }
-        
-        input[type="text"] {
+        h1 { text-align: center; color: #333; margin-bottom: 10px; font-size: 32px; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 30px; font-size: 14px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; color: #555; font-weight: 600; }
+        input, select {
             width: 100%;
             padding: 15px;
             border: 2px solid #e0e0e0;
             border-radius: 10px;
             font-size: 16px;
-            transition: all 0.3s;
         }
-        
-        input[type="text"]:focus {
+        input:focus, select:focus {
             outline: none;
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
-        
-        select {
-            width: 100%;
-            padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-size: 16px;
-            background: white;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        
-        select:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        
         button {
             width: 100%;
             padding: 15px;
@@ -107,63 +51,42 @@
             cursor: pointer;
             transition: all 0.3s;
         }
-        
         button:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
         }
-        
-        button:active:not(:disabled) {
-            transform: translateY(0);
-        }
-        
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
+        button:disabled { background: #ccc; cursor: not-allowed; }
         #status {
             margin-top: 20px;
             padding: 15px;
             border-radius: 10px;
             text-align: center;
-            font-weight: 500;
             display: none;
         }
-        
-        #status.show {
-            display: block;
-        }
-        
-        .error {
-            background: #fee;
-            color: #c33;
-            border: 2px solid #fcc;
-        }
-        
-        .success {
-            background: #efe;
-            color: #2d7a2d;
-            border: 2px solid #cfc;
-        }
-        
-        .spinner {
+        #status.show { display: block; }
+        .error { background: #fee; color: #c33; border: 2px solid #fcc; }
+        .success { background: #efe; color: #2d7a2d; border: 2px solid #cfc; }
+        .processing { background: #fef9e7; color: #f39c12; border: 2px solid #fdeaa8; }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #f0f0f0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-top: 15px;
             display: none;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 15px auto;
         }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.5s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
         }
-        
         .info {
             margin-top: 30px;
             padding: 20px;
@@ -172,152 +95,146 @@
             font-size: 14px;
             color: #666;
         }
-        
-        .info h3 {
-            margin-bottom: 12px;
-            color: #333;
-            font-size: 16px;
-            font-weight: 600;
-        }
-        
-        .info ul {
-            margin-left: 20px;
-            line-height: 1.8;
-        }
-        
-        .footer {
-            text-align: center;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #e0e0e0;
-            color: #999;
-            font-size: 13px;
-        }
-        
-        @media (max-width: 600px) {
-            .container { padding: 25px; }
-            h1 { font-size: 24px; }
-        }
+        .info h3 { margin-bottom: 12px; color: #333; }
+        .info ul { margin-left: 20px; line-height: 1.8; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🎬 Video Downloader</h1>
-        <p class="subtitle">Download from YouTube & TikTok</p>
+        <p class="subtitle">YouTube & TikTok Downloader</p>
         
-        <form id="downloadForm">
+        <form id="form">
             <div class="form-group">
-                <label for="url">📎 Video URL</label>
-                <input 
-                    type="text" 
-                    id="url" 
-                    placeholder="https://youtube.com/watch?v=... or https://tiktok.com/..." 
-                    required
-                >
+                <label>📎 Video URL</label>
+                <input type="text" id="url" placeholder="Paste YouTube or TikTok URL" required>
             </div>
             
             <div class="form-group">
-                <label for="format">📂 Format</label>
+                <label>📂 Format</label>
                 <select id="format">
-                    <option value="mp4">🎬 MP4 Video (720p - Windows compatible)</option>
+                    <option value="mp4">🎬 MP4 Video (720p, H.264)</option>
                     <option value="mp3">🎵 MP3 Audio (320kbps)</option>
                 </select>
             </div>
             
-            <button type="submit" id="submitBtn">Download</button>
+            <button type="submit" id="btn">Download</button>
         </form>
         
-        <div class="spinner" id="spinner"></div>
+        <div class="progress-bar" id="progressBar">
+            <div class="progress-fill" id="progressFill">0%</div>
+        </div>
+        
         <div id="status"></div>
         
         <div class="info">
-            <h3>ℹ️ Information</h3>
+            <h3>ℹ️ Info</h3>
             <ul>
-                <li><strong>Platforms:</strong> YouTube, TikTok</li>
                 <li><strong>Max size:</strong> 200MB</li>
-                <li><strong>Video quality:</strong> 720p (H.264)</li>
-                <li><strong>Audio quality:</strong> 320kbps MP3</li>
-                <li><strong>Windows compatible:</strong> Auto-convert HEVC to H.264</li>
+                <li><strong>Platforms:</strong> YouTube, TikTok</li>
+                <li><strong>Windows compatible:</strong> H.264 codec</li>
             </ul>
         </div>
-        
-        <div class="footer">Made with ❤️ using yt-dlp & ffmpeg</div>
     </div>
     
     <script>
-        const form = document.getElementById('downloadForm');
-        const status = document.getElementById('status');
-        const submitBtn = document.getElementById('submitBtn');
-        const spinner = document.getElementById('spinner');
-        const urlInput = document.getElementById('url');
-        const formatSelect = document.getElementById('format');
+        let downloadId = null;
+        let checkInterval = null;
         
-        form.addEventListener('submit', async (e) => {
+        document.getElementById('form').onsubmit = async (e) => {
             e.preventDefault();
             
-            const url = urlInput.value.trim();
-            const format = formatSelect.value;
+            const url = document.getElementById('url').value.trim();
+            const format = document.getElementById('format').value;
+            const btn = document.getElementById('btn');
+            const status = document.getElementById('status');
+            const progressBar = document.getElementById('progressBar');
+            const progressFill = document.getElementById('progressFill');
             
-            if (!url) {
-                showStatus('Please enter a URL', 'error');
-                return;
-            }
-            
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Processing...';
-            spinner.style.display = 'block';
-            hideStatus();
+            btn.disabled = true;
+            btn.textContent = 'Starting...';
+            status.className = 'processing show';
+            status.textContent = '⏳ Initializing download...';
+            progressBar.style.display = 'block';
+            progressFill.style.width = '10%';
+            progressFill.textContent = '10%';
             
             try {
-                const response = await fetch('/api/download', {
+                // Start download
+                const response = await fetch('/api/start-download', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ url, format })
+                    body: JSON.stringify({url, format})
                 });
                 
                 if (!response.ok) {
                     const error = await response.json();
-                    throw new Error(error.error || 'Download failed');
+                    throw new Error(error.error);
                 }
                 
-                const contentDisposition = response.headers.get('Content-Disposition');
-                let filename = `download.${format}`;
+                const data = await response.json();
+                downloadId = data.download_id;
                 
-                if (contentDisposition) {
-                    const match = contentDisposition.match(/filename="?(.+?)"?$/);
-                    if (match) filename = match[1];
-                }
+                status.textContent = '📥 Downloading...';
+                progressFill.style.width = '30%';
+                progressFill.textContent = '30%';
                 
-                const blob = await response.blob();
-                const downloadUrl = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = downloadUrl;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(downloadUrl);
-                
-                showStatus('✅ Download started! Check your downloads folder.', 'success');
-                urlInput.value = '';
+                // Poll for status
+                checkInterval = setInterval(checkDownloadStatus, 2000);
                 
             } catch (error) {
-                console.error('Error:', error);
-                showStatus('❌ ' + error.message, 'error');
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Download';
-                spinner.style.display = 'none';
+                btn.disabled = false;
+                btn.textContent = 'Download';
+                status.className = 'error show';
+                status.textContent = '❌ ' + error.message;
+                progressBar.style.display = 'none';
             }
-        });
+        };
         
-        function showStatus(message, type) {
-            status.textContent = message;
-            status.className = type + ' show';
-        }
-        
-        function hideStatus() {
-            status.className = '';
+        async function checkDownloadStatus() {
+            try {
+                const response = await fetch(`/api/status/${downloadId}`);
+                const data = await response.json();
+                
+                const status = document.getElementById('status');
+                const progressFill = document.getElementById('progressFill');
+                const btn = document.getElementById('btn');
+                
+                if (data.status === 'ready') {
+                    clearInterval(checkInterval);
+                    
+                    status.className = 'success show';
+                    status.textContent = '✅ Ready! Downloading file...';
+                    progressFill.style.width = '100%';
+                    progressFill.textContent = '100%';
+                    
+                    // Download file
+                    window.location.href = `/api/download/${downloadId}`;
+                    
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.textContent = 'Download';
+                        document.getElementById('url').value = '';
+                        document.getElementById('progressBar').style.display = 'none';
+                        status.textContent = '✅ Download complete!';
+                    }, 2000);
+                    
+                } else if (data.status === 'error') {
+                    clearInterval(checkInterval);
+                    btn.disabled = false;
+                    btn.textContent = 'Download';
+                    status.className = 'error show';
+                    status.textContent = '❌ ' + data.error;
+                    document.getElementById('progressBar').style.display = 'none';
+                    
+                } else if (data.status === 'downloading') {
+                    progressFill.style.width = '60%';
+                    progressFill.textContent = '60%';
+                }
+                
+            } catch (error) {
+                console.error('Status check error:', error);
+            }
         }
     </script>
 </body>
