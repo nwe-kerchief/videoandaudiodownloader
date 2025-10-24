@@ -7,6 +7,8 @@ import logging
 import threading
 import glob
 import base64
+import requests
+import json
 
 app = Flask(__name__)
 
@@ -50,37 +52,69 @@ def download_video_background(download_id, url, format_type, cookies_path):
         timestamp = int(time.time())
         output_template = f"/tmp/video_{url_hash}_{timestamp}.%(ext)s"
         
-        # Updated command with better YouTube compatibility
-        cmd = [
-            "yt-dlp",
-            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "--no-check-certificates",
-            "--extractor-retries", "3",
-            "--retries", "3",
-            "--fragment-retries", "3",
-            "--throttled-rate", "100K",
-            # YouTube specific fixes
-            "--compat-options", "youtube-dl",
-            "--no-part",
-            "--no-mtime",
-            "-o", output_template
-        ]
-        
-        if format_type == 'mp3':
-            cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
+        # Try different approaches based on platform
+        if 'youtube.com' in url or 'youtu.be' in url:
+            # YouTube specific approach
+            cmd = [
+                "yt-dlp",
+                "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "--no-check-certificates",
+                "--extractor-retries", "2",
+                "--retries", "2", 
+                "--fragment-retries", "2",
+                "--throttled-rate", "100K",
+                "--compat-options", "youtube-dl",
+                "--no-part",
+                "--no-mtime",
+                "-o", output_template
+            ]
+            
+            if format_type == 'mp3':
+                cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
+            else:
+                cmd.extend(["--format", "best[height<=480]"])
+                
+        elif 'tiktok.com' in url:
+            # TikTok specific approach - use simpler format selection
+            cmd = [
+                "yt-dlp",
+                "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "--no-check-certificates",
+                "--extractor-retries", "2",
+                "--retries", "2",
+                "--fragment-retries", "2",
+                "-o", output_template
+            ]
+            
+            if format_type == 'mp3':
+                cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
+            else:
+                # For TikTok, don't specify format and let yt-dlp choose
+                pass
         else:
-            # For video, prefer MP4 format with common codecs
-            cmd.extend(["--format", "best[height<=720][ext=mp4]/best[height<=720]"])
+            # Generic approach
+            cmd = [
+                "yt-dlp",
+                "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", 
+                "--no-check-certificates",
+                "--extractor-retries", "2",
+                "--retries", "2",
+                "--fragment-retries", "2",
+                "-o", output_template
+            ]
+            
+            if format_type == 'mp3':
+                cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
         
         if cookies_path:
             cmd.extend(["--cookies", cookies_path])
         
         cmd.append(url)
         
-        logger.info(f"📥 [{download_id}] Downloading...")
+        logger.info(f"📥 [{download_id}] Downloading from {url}")
         logger.info(f"Command: {' '.join(cmd)}")
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         
         if result.returncode == 0:
             files = glob.glob(f"/tmp/video_{url_hash}_{timestamp}.*")
@@ -104,19 +138,26 @@ def download_video_background(download_id, url, format_type, cookies_path):
                         'size': size_mb
                     }
             else:
-                download_status[download_id] = {'status': 'error', 'error': 'File not found'}
+                download_status[download_id] = {'status': 'error', 'error': 'File not found after download'}
         else:
-            # More detailed error logging
             error_output = result.stderr or result.stdout or 'Unknown error'
-            logger.error(f"❌ [{download_id}] yt-dlp error: {error_output[:500]}")
-            download_status[download_id] = {
-                'status': 'error', 
-                'error': f'Download failed: {error_output[:200]}...'
-            }
+            logger.error(f"❌ [{download_id}] Download failed: {error_output[:500]}")
+            
+            # Provide more specific error messages
+            if 'YouTube said: ERROR' in error_output:
+                error_msg = "YouTube is blocking downloads from this server. Try a different video or use TikTok."
+            elif 'Requested format is not available' in error_output:
+                error_msg = "This video format is not available. Try downloading as MP3 instead."
+            elif 'Video unavailable' in error_output:
+                error_msg = "This video is unavailable or restricted."
+            else:
+                error_msg = f"Download failed: {error_output[:100]}..."
+            
+            download_status[download_id] = {'status': 'error', 'error': error_msg}
     
     except subprocess.TimeoutExpired:
         logger.error(f"❌ [{download_id}] Download timeout")
-        download_status[download_id] = {'status': 'error', 'error': 'Timeout (10 minutes)'}
+        download_status[download_id] = {'status': 'error', 'error': 'Timeout (5 minutes)'}
     except Exception as e:
         logger.error(f"❌ [{download_id}] Unexpected error: {str(e)}")
         download_status[download_id] = {'status': 'error', 'error': f'Unexpected error: {str(e)}'}
@@ -138,8 +179,9 @@ def start_download():
             return jsonify({"error": "URL required"}), 400
         
         # Basic URL validation
-        if not any(domain in url for domain in ['youtube.com', 'youtu.be', 'tiktok.com', 'vm.tiktok.com']):
-            return jsonify({"error": "Only YouTube and TikTok URLs are supported"}), 400
+        supported_domains = ['youtube.com', 'youtu.be', 'tiktok.com', 'vm.tiktok.com']
+        if not any(domain in url for domain in supported_domains):
+            return jsonify({"error": f"Only {', '.join(supported_domains)} URLs are supported"}), 400
         
         download_id = hashlib.md5(f"{url}{time.time()}".encode()).hexdigest()[:12]
         cookies_path = setup_cookies()
