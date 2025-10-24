@@ -27,6 +27,7 @@ def setup_cookies():
                 content = f.read().strip()
             
             if content:
+                # Count valid cookie lines
                 lines = content.split('\n')
                 valid_lines = 0
                 for line in lines:
@@ -72,108 +73,44 @@ def clear_tmp_directory():
         except: 
             pass
 
-def get_video_duration(url, use_cookies, cookies_path):
-    """Get video duration in seconds"""
-    try:
-        cmd = ["yt-dlp", "--get-duration", url]
-        if use_cookies: 
-            cmd.extend(["--cookies", cookies_path])
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode == 0:
-            duration_str = result.stdout.strip()
-            parts = list(map(int, duration_str.split(':')))
-            if len(parts) == 3: 
-                return parts[0] * 3600 + parts[1] * 60 + parts[2]
-            elif len(parts) == 2: 
-                return parts[0] * 60 + parts[1]
-            elif len(parts) == 1: 
-                return parts[0]
-    except Exception as e:
-        logger.error(f"Error getting duration: {e}")
-    return None
-
-def get_video_title(url, use_cookies, cookies_path):
-    """Get video title"""
-    try:
-        cmd = ["yt-dlp", "--get-title", url]
-        if use_cookies: 
-            cmd.extend(["--cookies", cookies_path])
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode == 0: 
-            return result.stdout.strip()
-    except Exception as e:
-        logger.error(f"Error getting title: {e}")
-    return None
-
 def download_video_background(download_id, url, format_type, cookies_path):
-    """Background download function with improved logic from Telegram bot"""
+    """Background download function using SIMPLE Telegram bot logic"""
     try:
         download_status[download_id] = {'status': 'downloading'}
         
         # Clear temp directory
         clear_tmp_directory()
         
-        # Setup cookies
-        tmp_cookies_path = "/tmp/cookies.txt"
-        use_cookies = False
-        if cookies_path and os.path.exists(cookies_path):
-            shutil.copy2(cookies_path, tmp_cookies_path)
-            use_cookies = True
-            logger.info(f"🍪 [{download_id}] Using cookies")
-        else:
-            logger.info(f"🌐 [{download_id}] No cookies")
-        
-        # Get video info
-        video_title = get_video_title(url, use_cookies, tmp_cookies_path)
-        safe_filename = "download"
-        if video_title:
-            safe_filename = re.sub(r'[<>:"/\\|?*]', '', video_title)
-            safe_filename = safe_filename.replace(' ', '_')[:100]
-        
         # Generate unique output template
         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
         timestamp = int(time.time())
-        output_template = f"/tmp/video_{url_hash}_{timestamp}.%(ext)s"
+        safe_filename = f"video_{url_hash}_{timestamp}"
+        output_template = f"/tmp/{safe_filename}.%(ext)s"
         
-        # Build download command based on format and platform
+        # Build SIMPLE download command - NO format specifications
         if format_type == 'mp3':
-            # Audio download
+            # Simple audio download
             base_command = [
-                "yt-dlp", "-x", "--audio-format", "mp3", "--audio-quality", "0",
+                "yt-dlp", "-x", "--audio-format", "mp3",
                 "-o", output_template, 
-                "--no-warnings", 
-                "--compat-options", "no-keep-subs",
-                "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "--no-check-certificates"
+                "--no-warnings"
             ]
         else:
-            # Video download with smart format selection
-            duration = get_video_duration(url, use_cookies, tmp_cookies_path)
-            
-            # Smart format selection based on duration (from Telegram bot)
-            if duration and duration > 600:  # > 10 minutes
-                format_selector = "best[height<=360]/best[height<=480]"
-            elif duration and duration > 300:  # 5-10 minutes
-                format_selector = "best[height<=720]/best[height<=480]"
-            else:  # < 5 minutes
-                format_selector = "best[height<=1080]/best[height<=720]"
-            
+            # Simple video download - let yt-dlp choose the best format
             base_command = [
-                "yt-dlp", "-f", format_selector, "--merge-output-format", "mp4",
+                "yt-dlp", 
                 "-o", output_template,
-                "--no-warnings", 
-                "--compat-options", "no-keep-subs",
-                "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "--no-check-certificates"
+                "--no-warnings"
             ]
         
-        # Add cookies if available
-        if use_cookies:
-            base_command.extend(["--cookies", tmp_cookies_path])
+        # Add cookies if available - use original file directly
+        if cookies_path and os.path.exists(cookies_path):
+            base_command.extend(["--cookies", cookies_path])
+            logger.info(f"🍪 [{download_id}] Using cookies file directly")
         
         base_command.append(url)
         
-        logger.info(f"📥 [{download_id}] Starting download")
+        logger.info(f"📥 [{download_id}] Starting simple download")
         logger.info(f"Command: {' '.join(base_command)}")
         
         # Execute download
@@ -183,80 +120,22 @@ def download_video_background(download_id, url, format_type, cookies_path):
             error_msg = result.stderr or result.stdout or 'Unknown error'
             logger.error(f"❌ [{download_id}] Download failed: {error_msg[:500]}")
             
-            # Enhanced error messages
-            if 'Requested format is not available' in error_msg:
-                if format_type == 'mp4':
-                    error_msg = "Video format not available. Try downloading as MP3 audio instead."
+            # Try without cookies if cookies failed
+            if cookies_path and 'cookies.txt' in error_msg:
+                logger.info(f"🔄 [{download_id}] Trying without cookies")
+                base_command_no_cookies = [cmd for cmd in base_command if cmd != '--cookies' and cmd != cookies_path]
+                result = subprocess.run(base_command_no_cookies, capture_output=True, text=True, timeout=300)
+                
+                if result.returncode == 0:
+                    process_downloaded_file(download_id, format_type, safe_filename)
                 else:
-                    error_msg = "This content is not available in the requested format."
-            elif 'Signature extraction failed' in error_msg:
-                error_msg = "YouTube is blocking this video. Try a different video or use TikTok."
-            elif 'Video unavailable' in error_msg:
-                error_msg = "This video is unavailable or restricted."
+                    download_status[download_id] = {'status': 'error', 'error': 'Download failed. Try a different video.'}
             else:
-                error_msg = f"Download failed: {error_msg[:100]}..."
-            
-            download_status[download_id] = {'status': 'error', 'error': error_msg}
+                download_status[download_id] = {'status': 'error', 'error': 'Download failed. Try a different video or format.'}
             return
         
-        # Find downloaded file
-        files = os.listdir('/tmp')
-        logger.info(f"📂 Files in /tmp: {files}")
-        
-        if format_type == 'mp3':
-            downloaded_files = [f for f in files if f.endswith('.mp3')]
-            if not downloaded_files:
-                # Fallback to other audio formats
-                for ext in ['.m4a', '.webm', '.opus']:
-                    downloaded_files = [f for f in files if f.endswith(ext)]
-                    if downloaded_files: 
-                        logger.info(f"🎵 Found audio: {ext}")
-                        break
-        else:
-            downloaded_files = [f for f in files if f.endswith('.mp4')]
-            if not downloaded_files:
-                # Fallback to other video formats
-                for ext in ['.webm', '.mkv']:
-                    downloaded_files = [f for f in files if f.endswith(ext)]
-                    if downloaded_files: 
-                        logger.info(f"🎬 Found video: {ext}")
-                        break
-        
-        logger.info(f"✅ Downloaded files: {downloaded_files}")
-        
-        if not downloaded_files:
-            logger.error("❌ No files found after download")
-            download_status[download_id] = {'status': 'error', 'error': 'No files found after download'}
-            return
-        
-        file_path = f"/tmp/{downloaded_files[-1]}"
-        logger.info(f"📦 Using file: {file_path}")
-        
-        file_size = os.path.getsize(file_path)
-        size_mb = file_size / (1024 * 1024)
-        
-        # Check file size
-        if file_size > MAX_FILE_SIZE:
-            os.remove(file_path)
-            download_status[download_id] = {
-                'status': 'error',
-                'error': f'File too large: {size_mb:.1f}MB (max {MAX_FILE_SIZE/1024/1024}MB)'
-            }
-            return
-        
-        # Get display title
-        display_title = video_title if video_title else downloaded_files[-1]
-        for ext in ['.mp3', '.mp4', '.m4a', '.webm', '.opus', '.mkv']:
-            if display_title.endswith(ext):
-                display_title = display_title[:-len(ext)]
-        
-        logger.info(f"✅ [{download_id}] Ready: {size_mb:.2f}MB - {display_title}")
-        download_status[download_id] = {
-            'status': 'ready',
-            'file': file_path,
-            'size': size_mb,
-            'title': display_title
-        }
+        # Process the downloaded file
+        process_downloaded_file(download_id, format_type, safe_filename)
         
     except subprocess.TimeoutExpired:
         logger.error(f"❌ [{download_id}] Download timeout")
@@ -264,6 +143,79 @@ def download_video_background(download_id, url, format_type, cookies_path):
     except Exception as e:
         logger.error(f"❌ [{download_id}] Unexpected error: {str(e)}")
         download_status[download_id] = {'status': 'error', 'error': f'Unexpected error: {str(e)}'}
+
+def process_downloaded_file(download_id, format_type, safe_filename):
+    """Process downloaded file"""
+    # Find downloaded file
+    files = os.listdir('/tmp')
+    logger.info(f"📂 Files in /tmp: {files}")
+    
+    # Look for files with our pattern
+    downloaded_files = []
+    for f in files:
+        if safe_filename in f:
+            downloaded_files.append(f)
+    
+    # If no files with our pattern, look for any media files (recent ones)
+    if not downloaded_files:
+        if format_type == 'mp3':
+            # Get all audio files sorted by modification time (newest first)
+            audio_files = []
+            for f in files:
+                if f.endswith(('.mp3', '.m4a', '.webm', '.opus')):
+                    file_path = f"/tmp/{f}"
+                    audio_files.append((f, os.path.getmtime(file_path)))
+            
+            if audio_files:
+                audio_files.sort(key=lambda x: x[1], reverse=True)
+                downloaded_files = [audio_files[0][0]]
+        else:
+            # Get all video files sorted by modification time (newest first)
+            video_files = []
+            for f in files:
+                if f.endswith(('.mp4', '.webm', '.mkv')):
+                    file_path = f"/tmp/{f}"
+                    video_files.append((f, os.path.getmtime(file_path)))
+            
+            if video_files:
+                video_files.sort(key=lambda x: x[1], reverse=True)
+                downloaded_files = [video_files[0][0]]
+    
+    logger.info(f"✅ Downloaded files: {downloaded_files}")
+    
+    if not downloaded_files:
+        logger.error("❌ No files found after download")
+        download_status[download_id] = {'status': 'error', 'error': 'No files found after download'}
+        return
+    
+    file_path = f"/tmp/{downloaded_files[-1]}"
+    logger.info(f"📦 Using file: {file_path}")
+    
+    file_size = os.path.getsize(file_path)
+    size_mb = file_size / (1024 * 1024)
+    
+    # Check file size
+    if file_size > MAX_FILE_SIZE:
+        os.remove(file_path)
+        download_status[download_id] = {
+            'status': 'error',
+            'error': f'File too large: {size_mb:.1f}MB (max {MAX_FILE_SIZE/1024/1024}MB)'
+        }
+        return
+    
+    # Get display title from filename
+    display_title = downloaded_files[-1]
+    for ext in ['.mp3', '.mp4', '.m4a', '.webm', '.opus', '.mkv']:
+        if display_title.endswith(ext):
+            display_title = display_title[:-len(ext)]
+    
+    logger.info(f"✅ [{download_id}] Ready: {size_mb:.2f}MB - {display_title}")
+    download_status[download_id] = {
+        'status': 'ready',
+        'file': file_path,
+        'size': size_mb,
+        'title': display_title
+    }
 
 @app.route('/')
 def index():
@@ -281,7 +233,7 @@ def start_download():
         if not url:
             return jsonify({"error": "URL required"}), 400
         
-        # URL validation (from Telegram bot)
+        # URL validation
         supported_domains = ['youtube.com', 'youtu.be', 'tiktok.com', 'vm.tiktok.com']
         if not any(domain in url for domain in supported_domains):
             return jsonify({"error": f"Only {', '.join(supported_domains)} URLs are supported"}), 400
@@ -331,19 +283,22 @@ def get_download(download_id):
         if filename.endswith('.mp3'):
             download_name = f"{title}.mp3"
             mimetype = 'audio/mpeg'
-            as_attachment = True
         elif filename.endswith('.mp4'):
-            download_name = f"{title}.mp4"
+            download_name = f"{title}.mp4" 
             mimetype = 'video/mp4'
-            as_attachment = True
+        elif filename.endswith('.webm'):
+            download_name = f"{title}.webm"
+            mimetype = 'video/webm'
+        elif filename.endswith('.m4a'):
+            download_name = f"{title}.m4a"
+            mimetype = 'audio/mp4'
         else:
             download_name = filename
             mimetype = 'application/octet-stream'
-            as_attachment = True
         
         response = send_file(
             file_path,
-            as_attachment=as_attachment,
+            as_attachment=True,
             download_name=download_name,
             mimetype=mimetype
         )
@@ -380,7 +335,7 @@ def cookies_status():
             return jsonify({
                 'has_cookies': True,
                 'cookies_source': 'github_file',
-                'message': f'Found {valid_cookies} valid cookies',
+                'message': f'{valid_cookies} cookies loaded',
                 'valid_cookies': valid_cookies
             })
         except Exception as e:
@@ -389,12 +344,12 @@ def cookies_status():
                 'cookies_source': 'github_file',
                 'message': f'Error reading cookies: {str(e)}'
             })
-    else:
-        return jsonify({
-            'has_cookies': False,
-            'cookies_source': 'none',
-            'message': 'No cookies file found'
-        })
+    
+    return jsonify({
+        'has_cookies': False,
+        'cookies_source': 'none',
+        'message': 'No cookies file found'
+    })
 
 @app.route('/health')
 def health():
