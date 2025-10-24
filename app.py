@@ -6,24 +6,26 @@ import time
 import logging
 import threading
 import glob
+import base64
 
 app = Flask(__name__)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-YOUTUBE_COOKIES = os.environ.get('YOUTUBE_COOKIES', '')
+YOUTUBE_COOKIES_B64 = os.environ.get('YOUTUBE_COOKIES_B64', '')
 download_status = {}
 
 def setup_cookies():
-    if not YOUTUBE_COOKIES:
+    if not YOUTUBE_COOKIES_B64:
         return None
     try:
         cookies_path = '/tmp/cookies.txt'
-        with open(cookies_path, 'w') as f:
-            f.write(YOUTUBE_COOKIES)
+        with open(cookies_path, 'wb') as f:
+            f.write(base64.b64decode(YOUTUBE_COOKIES_B64))
         return cookies_path
-    except:
+    except Exception as e:
+        logger.error(f"Cookies decode error: {e}")
         return None
 
 def cleanup_old_files():
@@ -183,3 +185,4 @@ def health():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
+
