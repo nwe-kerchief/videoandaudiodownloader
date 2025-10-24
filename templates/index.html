@@ -105,12 +105,24 @@
             border: 1px solid #ffeaa7;
             font-size: 13px;
         }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+        .status-good { background: #d4edda; color: #155724; }
+        .status-bad { background: #f8d7da; color: #721c24; }
+        .status-warning { background: #fff3cd; color: #856404; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🎬 Video Downloader</h1>
         <p class="subtitle">YouTube & TikTok Downloader</p>
+        
+        <div id="cookiesStatus" style="margin-bottom: 20px; padding: 10px; border-radius: 8px; text-align: center; display: none;"></div>
         
         <form id="form">
             <div class="form-group">
@@ -121,8 +133,8 @@
             <div class="form-group">
                 <label>📂 Format</label>
                 <select id="format">
-                    <option value="mp4">🎬 MP4 Video (720p, H.264)</option>
-                    <option value="mp3">🎵 MP3 Audio (320kbps)</option>
+                    <option value="mp4">🎬 MP4 Video</option>
+                    <option value="mp3">🎵 MP3 Audio</option>
                 </select>
             </div>
             
@@ -136,16 +148,21 @@
         <div id="status"></div>
         
         <div class="tips">
-            <strong>💡 Tips:</strong> If downloads fail, try using a different video URL or check if the video is available in your region.
+            <strong>💡 Current Status:</strong> 
+            <ul>
+                <li><strong>TikTok:</strong> ✅ Working</li>
+                <li><strong>YouTube:</strong> 🍪 Needs cookies for age-restricted videos</li>
+                <li><strong>MP3 Audio:</strong> ✅ Better success rate</li>
+            </ul>
         </div>
         
         <div class="info">
-            <h3>ℹ️ Info</h3>
+            <h3>ℹ️ How to Get YouTube Working</h3>
             <ul>
-                <li><strong>Max size:</strong> 300MB</li>
-                <li><strong>Platforms:</strong> YouTube, TikTok</li>
-                <li><strong>Windows compatible:</strong> H.264 codec</li>
-                <li><strong>Timeout:</strong> 10 minutes</li>
+                <li>Add a <code>cookies.txt</code> file in the app directory</li>
+                <li>Use browser extension to export YouTube cookies</li>
+                <li>TikTok works without cookies</li>
+                <li>MP3 downloads often work better</li>
             </ul>
         </div>
     </div>
@@ -153,6 +170,32 @@
     <script>
         let downloadId = null;
         let checkInterval = null;
+        
+        // Check cookies status on page load
+        async function checkCookiesStatus() {
+            try {
+                const response = await fetch('/api/cookies-status');
+                const data = await response.json();
+                
+                const statusDiv = document.getElementById('cookiesStatus');
+                if (data.has_cookies) {
+                    statusDiv.style.display = 'block';
+                    statusDiv.style.background = '#d4edda';
+                    statusDiv.style.color = '#155724';
+                    statusDiv.innerHTML = '🍪 Cookies loaded from ' + data.cookies_source;
+                } else {
+                    statusDiv.style.display = 'block';
+                    statusDiv.style.background = '#fff3cd';
+                    statusDiv.style.color = '#856404';
+                    statusDiv.innerHTML = '⚠️ No cookies file - YouTube may not work for restricted videos';
+                }
+            } catch (error) {
+                console.error('Failed to check cookies status:', error);
+            }
+        }
+        
+        // Check cookies status when page loads
+        document.addEventListener('DOMContentLoaded', checkCookiesStatus);
         
         document.getElementById('form').onsubmit = async (e) => {
             e.preventDefault();
@@ -173,7 +216,6 @@
             progressFill.textContent = '10%';
             
             try {
-                // Start download
                 const response = await fetch('/api/start-download', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -188,11 +230,10 @@
                 const data = await response.json();
                 downloadId = data.download_id;
                 
-                status.textContent = '📥 Downloading... This may take a few minutes';
+                status.textContent = '📥 Downloading... Please wait';
                 progressFill.style.width = '30%';
                 progressFill.textContent = '30%';
                 
-                // Poll for status
                 checkInterval = setInterval(checkDownloadStatus, 2000);
                 
             } catch (error) {
@@ -225,7 +266,6 @@
                     progressFill.style.width = '100%';
                     progressFill.textContent = '100%';
                     
-                    // Download file
                     window.location.href = `/api/download/${downloadId}`;
                     
                     setTimeout(() => {
@@ -245,14 +285,15 @@
                     document.getElementById('progressBar').style.display = 'none';
                     
                 } else if (data.status === 'downloading') {
-                    progressFill.style.width = '60%';
-                    progressFill.textContent = '60%';
-                    status.textContent = '📥 Downloading... This may take a few minutes';
+                    const currentWidth = parseInt(progressFill.style.width);
+                    if (currentWidth < 80) {
+                        progressFill.style.width = (currentWidth + 10) + '%';
+                        progressFill.textContent = (currentWidth + 10) + '%';
+                    }
                 }
                 
             } catch (error) {
                 console.error('Status check error:', error);
-                // Don't show error to user immediately, retry next interval
             }
         }
     </script>
