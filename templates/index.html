@@ -97,6 +97,14 @@
         }
         .info h3 { margin-bottom: 12px; color: #333; }
         .info ul { margin-left: 20px; line-height: 1.8; }
+        .tips {
+            margin-top: 15px;
+            padding: 15px;
+            background: #fff3cd;
+            border-radius: 8px;
+            border: 1px solid #ffeaa7;
+            font-size: 13px;
+        }
     </style>
 </head>
 <body>
@@ -127,12 +135,17 @@
         
         <div id="status"></div>
         
+        <div class="tips">
+            <strong>💡 Tips:</strong> If downloads fail, try using a different video URL or check if the video is available in your region.
+        </div>
+        
         <div class="info">
             <h3>ℹ️ Info</h3>
             <ul>
-                <li><strong>Max size:</strong> 200MB</li>
+                <li><strong>Max size:</strong> 300MB</li>
                 <li><strong>Platforms:</strong> YouTube, TikTok</li>
                 <li><strong>Windows compatible:</strong> H.264 codec</li>
+                <li><strong>Timeout:</strong> 10 minutes</li>
             </ul>
         </div>
     </div>
@@ -175,7 +188,7 @@
                 const data = await response.json();
                 downloadId = data.download_id;
                 
-                status.textContent = '📥 Downloading...';
+                status.textContent = '📥 Downloading... This may take a few minutes';
                 progressFill.style.width = '30%';
                 progressFill.textContent = '30%';
                 
@@ -194,6 +207,10 @@
         async function checkDownloadStatus() {
             try {
                 const response = await fetch(`/api/status/${downloadId}`);
+                if (!response.ok) {
+                    throw new Error('Status check failed');
+                }
+                
                 const data = await response.json();
                 
                 const status = document.getElementById('status');
@@ -230,10 +247,12 @@
                 } else if (data.status === 'downloading') {
                     progressFill.style.width = '60%';
                     progressFill.textContent = '60%';
+                    status.textContent = '📥 Downloading... This may take a few minutes';
                 }
                 
             } catch (error) {
                 console.error('Status check error:', error);
+                // Don't show error to user immediately, retry next interval
             }
         }
     </script>
