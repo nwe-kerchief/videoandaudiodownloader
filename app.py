@@ -13,17 +13,49 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-# Cookie configuration - prioritize local file over environment variable
 COOKIES_FILE = 'cookies.txt'
 YOUTUBE_COOKIES_B64 = os.environ.get('YOUTUBE_COOKIES_B64', '')
 download_status = {}
+
+def validate_cookies_file(file_path):
+    """Validate the cookies file format"""
+    try:
+        if not os.path.exists(file_path):
+            return False, "File does not exist"
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Check if it's a Netscape format cookies file
+        if not content.strip():
+            return False, "File is empty"
+        
+        # Check for Netscape format header
+        lines = content.split('\n')
+        if lines and 'Netscape HTTP Cookie File' in lines[0]:
+            return True, "Valid Netscape format"
+        else:
+            # Try to check if it has proper cookie format
+            for line in lines:
+                if line.strip() and not line.startswith('#') and '\t' in line:
+                    parts = line.split('\t')
+                    if len(parts) >= 7:
+                        return True, "Valid cookie format"
+            return False, "Invalid cookie format"
+            
+    except Exception as e:
+        return False, f"Error reading file: {str(e)}"
 
 def setup_cookies():
     """Setup cookies from local file or environment variable"""
     # First try to use local cookies file
     if os.path.exists(COOKIES_FILE):
-        logger.info(f"📁 Using local cookies file: {COOKIES_FILE}")
-        return COOKIES_FILE
+        is_valid, message = validate_cookies_file(COOKIES_FILE)
+        if is_valid:
+            logger.info(f"🍪 Using valid local cookies file: {COOKIES_FILE} - {message}")
+            return COOKIES_FILE
+        else:
+            logger.warning(f"⚠️ Local cookies file invalid: {message}")
     
     # Fallback to environment variable
     if YOUTUBE_COOKIES_B64:
@@ -31,12 +63,17 @@ def setup_cookies():
             cookies_path = '/tmp/cookies.txt'
             with open(cookies_path, 'wb') as f:
                 f.write(base64.b64decode(YOUTUBE_COOKIES_B64))
-            logger.info("🔐 Using cookies from environment variable")
-            return cookies_path
+            
+            is_valid, message = validate_cookies_file(cookies_path)
+            if is_valid:
+                logger.info(f"🔐 Using valid cookies from environment variable - {message}")
+                return cookies_path
+            else:
+                logger.warning(f"⚠️ Environment cookies invalid: {message}")
         except Exception as e:
             logger.error(f"Cookies decode error: {e}")
     
-    logger.info("ℹ️ No cookies configured - using public access")
+    logger.info("ℹ️ No valid cookies configured - using public access")
     return None
 
 def cleanup_old_files():
@@ -63,30 +100,42 @@ def download_video_background(download_id, url, format_type, cookies_path):
         
         # Platform-specific approaches
         if 'youtube.com' in url or 'youtu.be' in url:
-            # YouTube with enhanced options
-            cmd = [
-                "yt-dlp",
-                "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "--no-check-certificates",
-                "--extractor-retries", "3",
-                "--retries", "3",
-                "--fragment-retries", "3",
-                "--throttled-rate", "100K",
-                # Enhanced YouTube compatibility
-                "--compat-options", "youtube-dl",
-                "--no-part",
-                "--no-mtime",
-                "--force-ipv4",
-                "--socket-timeout", "15",
-                "-o", output_template
+            # YouTube with multiple fallback methods
+            methods = [
+                # Method 1: With cookies and specific format
+                [
+                    "yt-dlp",
+                    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "--no-check-certificates",
+                    "--extractor-retries", "2",
+                    "--retries", "2",
+                    "--fragment-retries", "2",
+                    "--throttled-rate", "100K",
+                    "--compat-options", "youtube-dl",
+                    "--no-part",
+                    "--no-mtime",
+                    "--force-ipv4",
+                    "-o", output_template
+                ],
+                # Method 2: Simpler approach without compatibility options
+                [
+                    "yt-dlp",
+                    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "--no-check-certificates",
+                    "--extractor-retries", "2",
+                    "--retries", "2",
+                    "--fragment-retries", "2",
+                    "-o", output_template
+                ]
             ]
             
-            if format_type == 'mp3':
-                cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
-            else:
-                # Try multiple format options for YouTube
-                cmd.extend(["--format", "best[height<=720]/best[height<=480]/best"])
-                
+            # Add format options
+            for method in methods:
+                if format_type == 'mp3':
+                    method.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
+                else:
+                    method.extend(["--format", "best[height<=720]"])
+        
         elif 'tiktok.com' in url:
             # TikTok - simpler approach since it's working
             cmd = [
@@ -101,10 +150,10 @@ def download_video_background(download_id, url, format_type, cookies_path):
             
             if format_type == 'mp3':
                 cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
-            # For TikTok video, let yt-dlp choose the best format
+            methods = [cmd]
         
         else:
-            # Generic approach for other platforms
+            # Generic approach
             cmd = [
                 "yt-dlp",
                 "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -117,21 +166,45 @@ def download_video_background(download_id, url, format_type, cookies_path):
             
             if format_type == 'mp3':
                 cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
+            methods = [cmd]
         
-        # Add cookies if available
-        if cookies_path and os.path.exists(cookies_path):
-            cmd.extend(["--cookies", cookies_path])
-            logger.info(f"🍪 Using cookies file: {cookies_path}")
-        else:
-            logger.info("🌐 No cookies - using public access")
+        # Try each method
+        result = None
+        success = False
         
-        cmd.append(url)
+        for i, cmd in enumerate(methods):
+            # Add cookies to command if available and valid
+            current_cmd = cmd.copy()
+            if cookies_path and os.path.exists(cookies_path):
+                current_cmd.extend(["--cookies", cookies_path])
+                logger.info(f"🍪 Method {i+1}: Using cookies file")
+            else:
+                logger.info(f"🌐 Method {i+1}: No cookies")
+            
+            current_cmd.append(url)
+            
+            logger.info(f"🔄 [{download_id}] Trying method {i+1}")
+            logger.info(f"Command: {' '.join(current_cmd)}")
+            
+            try:
+                result = subprocess.run(current_cmd, capture_output=True, text=True, timeout=300)
+                
+                if result.returncode == 0:
+                    logger.info(f"✅ [{download_id}] Method {i+1} succeeded")
+                    success = True
+                    break
+                else:
+                    error_msg = result.stderr or result.stdout or 'Unknown error'
+                    logger.warning(f"❌ [{download_id}] Method {i+1} failed: {error_msg[:200]}")
+                    # Continue to next method
+            except subprocess.TimeoutExpired:
+                logger.warning(f"⏰ [{download_id}] Method {i+1} timeout")
+                continue
+            except Exception as e:
+                logger.warning(f"⚠️ [{download_id}] Method {i+1} error: {str(e)}")
+                continue
         
-        logger.info(f"📥 [{download_id}] Downloading from {url}")
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        
-        if result.returncode == 0:
+        if success:
             files = glob.glob(f"/tmp/video_{url_hash}_{timestamp}.*")
             
             if files:
@@ -155,23 +228,16 @@ def download_video_background(download_id, url, format_type, cookies_path):
             else:
                 download_status[download_id] = {'status': 'error', 'error': 'File not found after download'}
         else:
-            error_output = result.stderr or result.stdout or 'Unknown error'
-            logger.error(f"❌ [{download_id}] Download failed: {error_output[:500]}")
+            # All methods failed
+            error_output = result.stderr if result else 'No result'
+            logger.error(f"❌ [{download_id}] All methods failed")
             
-            # Enhanced error messages
-            if 'YouTube said: ERROR' in error_output:
-                if cookies_path:
-                    error_msg = "YouTube is blocking access even with cookies. Try a different video or use TikTok."
-                else:
-                    error_msg = "YouTube is blocking downloads. Adding cookies might help."
-            elif 'Requested format is not available' in error_output:
-                error_msg = "This video format is not available. Try MP3 audio instead."
-            elif 'Video unavailable' in error_output:
-                error_msg = "This video is unavailable or restricted in your region."
-            elif 'Sign in to confirm' in error_output:
-                error_msg = "This video requires age verification. Cookies with login might be needed."
+            if 'does not look like a Netscape format' in str(error_output):
+                error_msg = "Cookies file format error. Using public access instead."
+            elif 'YouTube said: ERROR' in str(error_output):
+                error_msg = "YouTube is blocking access. Try a different video or use TikTok."
             else:
-                error_msg = f"Download failed: {error_output[:100]}..."
+                error_msg = f"Download failed: {str(error_output)[:100]}..."
             
             download_status[download_id] = {'status': 'error', 'error': error_msg}
     
@@ -271,10 +337,21 @@ def cookies_status():
     cookies_path = setup_cookies()
     has_cookies = cookies_path and os.path.exists(cookies_path)
     
-    return jsonify({
-        'has_cookies': has_cookies,
-        'cookies_source': 'local_file' if os.path.exists(COOKIES_FILE) else 'environment' if YOUTUBE_COOKIES_B64 else 'none'
-    })
+    if has_cookies:
+        is_valid, message = validate_cookies_file(cookies_path)
+        status_info = {
+            'has_cookies': is_valid,
+            'cookies_source': 'local_file' if os.path.exists(COOKIES_FILE) else 'environment',
+            'message': message
+        }
+    else:
+        status_info = {
+            'has_cookies': False,
+            'cookies_source': 'none',
+            'message': 'No valid cookies file found'
+        }
+    
+    return jsonify(status_info)
 
 @app.route('/health')
 def health():
