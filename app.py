@@ -50,17 +50,27 @@ def download_video_background(download_id, url, format_type, cookies_path):
         timestamp = int(time.time())
         output_template = f"/tmp/video_{url_hash}_{timestamp}.%(ext)s"
         
-        # Base command with bot protection bypass
+        # Updated command with better YouTube compatibility
         cmd = [
             "yt-dlp",
             "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "--no-check-certificates",
             "--extractor-retries", "3",
+            "--retries", "3",
+            "--fragment-retries", "3",
+            "--throttled-rate", "100K",
+            # YouTube specific fixes
+            "--compat-options", "youtube-dl",
+            "--no-part",
+            "--no-mtime",
             "-o", output_template
         ]
         
         if format_type == 'mp3':
             cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
+        else:
+            # For video, prefer MP4 format with common codecs
+            cmd.extend(["--format", "best[height<=720][ext=mp4]/best[height<=720]"])
         
         if cookies_path:
             cmd.extend(["--cookies", cookies_path])
@@ -68,6 +78,7 @@ def download_video_background(download_id, url, format_type, cookies_path):
         cmd.append(url)
         
         logger.info(f"📥 [{download_id}] Downloading...")
+        logger.info(f"Command: {' '.join(cmd)}")
         
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         
@@ -95,14 +106,20 @@ def download_video_background(download_id, url, format_type, cookies_path):
             else:
                 download_status[download_id] = {'status': 'error', 'error': 'File not found'}
         else:
-            error = result.stderr[:200] if result.stderr else 'Unknown error'
-            logger.error(f"❌ [{download_id}] {error}")
-            download_status[download_id] = {'status': 'error', 'error': 'Download failed'}
+            # More detailed error logging
+            error_output = result.stderr or result.stdout or 'Unknown error'
+            logger.error(f"❌ [{download_id}] yt-dlp error: {error_output[:500]}")
+            download_status[download_id] = {
+                'status': 'error', 
+                'error': f'Download failed: {error_output[:200]}...'
+            }
     
     except subprocess.TimeoutExpired:
-        download_status[download_id] = {'status': 'error', 'error': 'Timeout (10 min)'}
+        logger.error(f"❌ [{download_id}] Download timeout")
+        download_status[download_id] = {'status': 'error', 'error': 'Timeout (10 minutes)'}
     except Exception as e:
-        download_status[download_id] = {'status': 'error', 'error': str(e)}
+        logger.error(f"❌ [{download_id}] Unexpected error: {str(e)}")
+        download_status[download_id] = {'status': 'error', 'error': f'Unexpected error: {str(e)}'}
 
 @app.route('/')
 def index():
@@ -120,6 +137,10 @@ def start_download():
         if not url:
             return jsonify({"error": "URL required"}), 400
         
+        # Basic URL validation
+        if not any(domain in url for domain in ['youtube.com', 'youtu.be', 'tiktok.com', 'vm.tiktok.com']):
+            return jsonify({"error": "Only YouTube and TikTok URLs are supported"}), 400
+        
         download_id = hashlib.md5(f"{url}{time.time()}".encode()).hexdigest()[:12]
         cookies_path = setup_cookies()
         
@@ -133,6 +154,7 @@ def start_download():
         return jsonify({"download_id": download_id}), 200
     
     except Exception as e:
+        logger.error(f"Start download error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/status/<download_id>')
@@ -157,10 +179,11 @@ def get_download(download_id):
         if not os.path.exists(file_path):
             return jsonify({"error": "File not found"}), 404
         
+        filename = os.path.basename(file_path)
         response = send_file(
             file_path,
             as_attachment=True,
-            download_name=os.path.basename(file_path)
+            download_name=filename
         )
         
         @response.call_on_close
@@ -169,13 +192,15 @@ def get_download(download_id):
                 time.sleep(5)
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                del download_status[download_id]
+                if download_id in download_status:
+                    del download_status[download_id]
             except:
                 pass
         
         return response
     
     except Exception as e:
+        logger.error(f"Download error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/health')
@@ -185,4 +210,3 @@ def health():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
-
