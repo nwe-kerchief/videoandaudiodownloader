@@ -105,16 +105,16 @@
             border: 1px solid #ffeaa7;
             font-size: 13px;
         }
-        .status-badge {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            margin-left: 8px;
+        .cookies-status {
+            margin-bottom: 20px;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 14px;
         }
-        .status-good { background: #d4edda; color: #155724; }
-        .status-bad { background: #f8d7da; color: #721c24; }
-        .status-warning { background: #fff3cd; color: #856404; }
+        .cookies-valid { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .cookies-invalid { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .cookies-none { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
     </style>
 </head>
 <body>
@@ -122,7 +122,7 @@
         <h1>🎬 Video Downloader</h1>
         <p class="subtitle">YouTube & TikTok Downloader</p>
         
-        <div id="cookiesStatus" style="margin-bottom: 20px; padding: 10px; border-radius: 8px; text-align: center; display: none;"></div>
+        <div id="cookiesStatus" class="cookies-status"></div>
         
         <form id="form">
             <div class="form-group">
@@ -150,19 +150,19 @@
         <div class="tips">
             <strong>💡 Current Status:</strong> 
             <ul>
-                <li><strong>TikTok:</strong> ✅ Working</li>
-                <li><strong>YouTube:</strong> 🍪 Needs cookies for age-restricted videos</li>
+                <li><strong>TikTok:</strong> ✅ Working well</li>
+                <li><strong>YouTube:</strong> 🍪 Trying with cookies (fallback to public)</li>
                 <li><strong>MP3 Audio:</strong> ✅ Better success rate</li>
             </ul>
         </div>
         
         <div class="info">
-            <h3>ℹ️ How to Get YouTube Working</h3>
+            <h3>ℹ️ About Cookies</h3>
             <ul>
-                <li>Add a <code>cookies.txt</code> file in the app directory</li>
-                <li>Use browser extension to export YouTube cookies</li>
-                <li>TikTok works without cookies</li>
-                <li>MP3 downloads often work better</li>
+                <li>Cookies help with age-restricted YouTube videos</li>
+                <li>TikTok works fine without cookies</li>
+                <li>System automatically falls back to public access if cookies fail</li>
+                <li>Multiple download methods are tried automatically</li>
             </ul>
         </div>
     </div>
@@ -178,19 +178,24 @@
                 const data = await response.json();
                 
                 const statusDiv = document.getElementById('cookiesStatus');
+                statusDiv.style.display = 'block';
+                
                 if (data.has_cookies) {
-                    statusDiv.style.display = 'block';
-                    statusDiv.style.background = '#d4edda';
-                    statusDiv.style.color = '#155724';
-                    statusDiv.innerHTML = '🍪 Cookies loaded from ' + data.cookies_source;
-                } else {
-                    statusDiv.style.display = 'block';
-                    statusDiv.style.background = '#fff3cd';
-                    statusDiv.style.color = '#856404';
+                    statusDiv.className = 'cookies-status cookies-valid';
+                    statusDiv.innerHTML = `🍪 Cookies loaded from ${data.cookies_source} - ${data.message}`;
+                } else if (data.cookies_source === 'none') {
+                    statusDiv.className = 'cookies-status cookies-none';
                     statusDiv.innerHTML = '⚠️ No cookies file - YouTube may not work for restricted videos';
+                } else {
+                    statusDiv.className = 'cookies-status cookies-invalid';
+                    statusDiv.innerHTML = `❌ Cookies file invalid - ${data.message}`;
                 }
             } catch (error) {
                 console.error('Failed to check cookies status:', error);
+                const statusDiv = document.getElementById('cookiesStatus');
+                statusDiv.style.display = 'block';
+                statusDiv.className = 'cookies-status cookies-none';
+                statusDiv.innerHTML = '⚠️ Unable to check cookies status';
             }
         }
         
@@ -230,7 +235,7 @@
                 const data = await response.json();
                 downloadId = data.download_id;
                 
-                status.textContent = '📥 Downloading... Please wait';
+                status.textContent = '📥 Downloading... Trying different methods';
                 progressFill.style.width = '30%';
                 progressFill.textContent = '30%';
                 
