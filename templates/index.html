@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced Video Downloader</title>
+    <title>Simple Video Downloader</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -115,31 +115,12 @@
         .cookies-valid { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .cookies-invalid { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .cookies-none { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
-        .method-info {
-            margin-top: 10px;
-            font-size: 12px;
-            color: #666;
-            text-align: center;
-        }
-        .features {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-top: 15px;
-        }
-        .feature {
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            text-align: center;
-            font-size: 12px;
-        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎬 Enhanced Video Downloader</h1>
-        <p class="subtitle">Based on Telegram Bot Technology</p>
+        <h1>🎬 Simple Video Downloader</h1>
+        <p class="subtitle">Using Telegram Bot Method</p>
         
         <div id="cookiesStatus" class="cookies-status"></div>
         
@@ -152,8 +133,8 @@
             <div class="form-group">
                 <label>📂 Format</label>
                 <select id="format">
-                    <option value="mp4">🎬 MP4 Video (Smart Quality)</option>
-                    <option value="mp3">🎵 MP3 Audio (High Quality)</option>
+                    <option value="mp4">🎬 MP4 Video (Auto Quality)</option>
+                    <option value="mp3">🎵 MP3 Audio</option>
                 </select>
             </div>
             
@@ -165,32 +146,24 @@
         </div>
         
         <div id="status"></div>
-        <div id="methodInfo" class="method-info"></div>
-        
-        <div class="features">
-            <div class="feature">🚀 Smart Quality</div>
-            <div class="feature">🔒 Cookie Support</div>
-            <div class="feature">📊 Size Detection</div>
-            <div class="feature">⚡ Fast Fallback</div>
-        </div>
         
         <div class="tips">
-            <strong>💡 Enhanced Features:</strong> 
+            <strong>💡 Simple & Effective:</strong> 
             <ul>
-                <li><strong>Smart Quality:</strong> Automatically adjusts video quality based on duration</li>
-                <li><strong>Cookie Support:</strong> Better access to restricted content</li>
-                <li><strong>Multiple Formats:</strong> Automatic fallback if preferred format fails</li>
-                <li><strong>Size Limit:</strong> 300MB maximum file size</li>
+                <li><strong>Auto Quality:</strong> Let yt-dlp choose the best available format</li>
+                <li><strong>Cookie Support:</strong> 108 cookies loaded for better access</li>
+                <li><strong>Fallback:</strong> Automatically tries without cookies if needed</li>
+                <li><strong>Fast:</strong> Simple commands = faster downloads</li>
             </ul>
         </div>
         
         <div class="info">
             <h3>ℹ️ How It Works</h3>
             <ul>
-                <li>Uses advanced yt-dlp commands from Telegram bot</li>
-                <li>Smart format selection based on video duration</li>
-                <li>Automatic fallback to alternative formats</li>
-                <li>Enhanced error handling and user feedback</li>
+                <li>Uses the same simple approach as Telegram bot</li>
+                <li>No complex format specifications - let yt-dlp decide</li>
+                <li>Automatic fallback if cookies cause issues</li>
+                <li>Works with both YouTube and TikTok</li>
             </ul>
         </div>
     </div>
@@ -210,10 +183,10 @@
                 
                 if (data.has_cookies) {
                     statusDiv.className = 'cookies-status cookies-valid';
-                    statusDiv.innerHTML = `🍪 Enhanced Mode: ${data.valid_cookies} cookies loaded`;
+                    statusDiv.innerHTML = `🍪 Premium Mode: ${data.message}`;
                 } else {
                     statusDiv.className = 'cookies-status cookies-none';
-                    statusDiv.innerHTML = '🌐 Standard Mode: Some restricted videos may not work';
+                    statusDiv.innerHTML = '🌐 Standard Mode: Some videos may not work';
                 }
             } catch (error) {
                 console.error('Failed to check cookies status:', error);
@@ -232,16 +205,14 @@
             const status = document.getElementById('status');
             const progressBar = document.getElementById('progressBar');
             const progressFill = document.getElementById('progressFill');
-            const methodInfo = document.getElementById('methodInfo');
             
             btn.disabled = true;
-            btn.textContent = 'Starting Enhanced Download...';
+            btn.textContent = 'Starting...';
             status.className = 'processing show';
-            status.textContent = '🚀 Initializing enhanced download engine...';
+            status.textContent = '⏳ Initializing simple download...';
             progressBar.style.display = 'block';
             progressFill.style.width = '10%';
             progressFill.textContent = '10%';
-            methodInfo.textContent = 'Using Telegram bot technology...';
             
             try {
                 const response = await fetch('/api/start-download', {
@@ -258,10 +229,9 @@
                 const data = await response.json();
                 downloadId = data.download_id;
                 
-                status.textContent = '📥 Downloading with enhanced engine...';
+                status.textContent = '📥 Downloading with simple method...';
                 progressFill.style.width = '30%';
                 progressFill.textContent = '30%';
-                methodInfo.textContent = 'Smart format selection active...';
                 
                 checkInterval = setInterval(checkDownloadStatus, 2000);
                 
@@ -271,7 +241,6 @@
                 status.className = 'error show';
                 status.textContent = '❌ ' + error.message;
                 progressBar.style.display = 'none';
-                methodInfo.textContent = '';
             }
         };
         
@@ -287,16 +256,14 @@
                 const status = document.getElementById('status');
                 const progressFill = document.getElementById('progressFill');
                 const btn = document.getElementById('btn');
-                const methodInfo = document.getElementById('methodInfo');
                 
                 if (data.status === 'ready') {
                     clearInterval(checkInterval);
                     
                     status.className = 'success show';
-                    status.textContent = '✅ Enhanced download complete! Downloading file...';
+                    status.textContent = '✅ Download complete! Getting file...';
                     progressFill.style.width = '100%';
                     progressFill.textContent = '100%';
-                    methodInfo.textContent = 'Download ready!';
                     
                     // Download file
                     window.location.href = `/api/download/${downloadId}`;
@@ -306,8 +273,7 @@
                         btn.textContent = 'Download';
                         document.getElementById('url').value = '';
                         document.getElementById('progressBar').style.display = 'none';
-                        status.textContent = '✅ Download complete! Enhanced engine worked perfectly!';
-                        methodInfo.textContent = '';
+                        status.textContent = '✅ Download complete!';
                     }, 2000);
                     
                 } else if (data.status === 'error') {
@@ -317,7 +283,6 @@
                     status.className = 'error show';
                     status.textContent = '❌ ' + data.error;
                     document.getElementById('progressBar').style.display = 'none';
-                    methodInfo.textContent = 'Enhanced error handling completed';
                     
                 } else if (data.status === 'downloading') {
                     const currentWidth = parseInt(progressFill.style.width);
@@ -325,7 +290,6 @@
                         progressFill.style.width = (currentWidth + 10) + '%';
                         progressFill.textContent = (currentWidth + 10) + '%';
                     }
-                    methodInfo.textContent = 'Processing with smart quality selection...';
                 }
                 
             } catch (error) {
