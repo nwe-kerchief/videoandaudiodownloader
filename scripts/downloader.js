@@ -1,4 +1,4 @@
-fetch('/.netlify/functions/api-proxy', {
+fetch('/.netlify/functions/proxy', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ /* your data */ })
@@ -509,4 +509,5 @@ renderHistory();
 // Initialize
 
 resetUI();
+
 
