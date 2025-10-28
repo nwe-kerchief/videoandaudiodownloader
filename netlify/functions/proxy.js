@@ -1,6 +1,6 @@
+const { API_URL } = process.env;
+
 exports.handler = async (event, context) => {
-  const API_URL = process.env.API_URL; // Hidden in environment variables
-  
   try {
     const response = await fetch(API_URL, {
       method: event.httpMethod,
@@ -12,12 +12,13 @@ exports.handler = async (event, context) => {
     
     return {
       statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     };
   } catch (error) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Failed to fetch data' })
+      body: JSON.stringify({ error: error.message })
     };
   }
 };
