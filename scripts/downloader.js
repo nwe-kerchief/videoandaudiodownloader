@@ -1,10 +1,4 @@
-fetch('/.netlify/functions/proxy', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ /* your data */ })
-})
-.then(res => res.json())
-.then(data => console.log(data));
+const API_URL = 'https://zqnftzmzsxc2lwd5tlj72bp4tu0iviop.lambda-url.ap-southeast-2.on.aws/';
 
 
 // DOM Elements
@@ -271,7 +265,7 @@ async function startDownload(url, format) {
         // Update progress
         setProgress(30);
         
-        const response = await fetch('/.netlify/functions/proxy', {
+        const response = await fetch(API_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -509,6 +503,7 @@ renderHistory();
 // Initialize
 
 resetUI();
+
 
 
 
