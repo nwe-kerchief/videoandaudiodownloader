@@ -1,4 +1,4 @@
-const API_URL = 'https://zqnftzmzsxc2lwd5tlj72bp4tu0iviop.lambda-url.ap-southeast-2.on.aws/';
+const API_URL = process.env.API_URL;
 
 // DOM Elements
 const downloadForm = document.getElementById('downloadForm');
@@ -500,4 +500,5 @@ document.querySelector('#format-mp4').dispatchEvent(new Event('change'));
 renderHistory();
 
 // Initialize
+
 resetUI();
