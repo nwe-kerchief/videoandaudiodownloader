@@ -271,7 +271,7 @@ async function startDownload(url, format) {
         // Update progress
         setProgress(30);
         
-        const response = await fetch(API_URL, {
+        const response = await fetch('/.netlify/functions/proxy', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -509,5 +509,6 @@ renderHistory();
 // Initialize
 
 resetUI();
+
 
 
