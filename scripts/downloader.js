@@ -1,4 +1,11 @@
-const API_URL = process.env.API_URL;
+fetch('/.netlify/functions/api-proxy', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ /* your data */ })
+})
+.then(res => res.json())
+.then(data => console.log(data));
+
 
 // DOM Elements
 const downloadForm = document.getElementById('downloadForm');
@@ -502,3 +509,4 @@ renderHistory();
 // Initialize
 
 resetUI();
+
